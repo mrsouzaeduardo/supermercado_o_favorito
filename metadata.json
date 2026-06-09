@@ -1,0 +1,6 @@
+{
+  "name": "Supermercado O Favorito",
+  "description": "Supermercado O Favorito com sistema de entregas, promoções semanais, programa de fidelidade e rastreamento de pedidos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
