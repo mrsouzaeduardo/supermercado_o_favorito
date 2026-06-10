@@ -74,7 +74,7 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
           <div id="print-section" className="space-y-6 print:p-0 print:m-0 print:static">
             
             {/* Print Only Header (Hidden on UI) */}
-            <div className="hidden show-on-print print:block mb-6 border-b-2 border-gray-950 pb-4">
+            <div className="hidden show-on-print print:block mb-6 border-b-2 border-gray-950 pb-4 print-main-header">
               <div className="flex justify-between items-start">
                 <div>
                   <h1 className="text-xl font-black text-gray-900 font-display uppercase tracking-wider">Supermercado O Favorito</h1>
@@ -240,7 +240,7 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
             </div>
 
             {/* Print Confirmation Footnote */}
-            <div className="hidden print:block mt-12 pt-6 border-t border-dashed border-gray-405 text-center text-[10px] text-gray-400 font-medium">
+            <div className="hidden print:block mt-12 pt-6 border-t border-dashed border-gray-405 text-center text-[10px] text-gray-400 font-medium print-footnote">
               <p>Obrigado por comprar no Supermercado O Favorito • WhatsApp: (84) 9999-9999</p>
               <p className="mt-1">Favor conferir todas as sacolas de acordo com este romaneio antes de expedir!</p>
             </div>
