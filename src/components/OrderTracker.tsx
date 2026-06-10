@@ -115,7 +115,7 @@ export default function OrderTracker({ user, activeOrder: initialActiveOrder, po
             placeholder="Digite o código (ex: PED_XYZ) ou seu e-mail/WhatsApp..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-3.5 py-2 bg-gray-50 border border-gray-250 rounded-xl text-xs w-full focus:outline-hidden focus:border-emerald-600 focus:bg-white text-gray-800 font-medium"
+            className="px-3.5 py-2 bg-gray-50 border border-gray-250 rounded-xl text-base md:text-xs w-full focus:outline-hidden focus:border-emerald-600 focus:bg-white text-gray-800 font-medium"
             id="tracking-search-input"
           />
           <button

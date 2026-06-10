@@ -186,7 +186,7 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdateSuccess, o
                     placeholder="Ex: SEU NOME COMPLETO"
                     value={name}
                     onChange={(e) => setName(e.target.value.toUpperCase())}
-                    className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
                     id="profile-name-input"
                   />
                 </div>
@@ -204,7 +204,7 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdateSuccess, o
                     placeholder="corretamente@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                     id="profile-email-input"
                   />
                 </div>
@@ -222,7 +222,7 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdateSuccess, o
                     placeholder="Ex: 11 99999-9999"
                     value={whatsapp}
                     onChange={(e) => setWhatsapp(formatWhatsAppNumber(e.target.value))}
-                    className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
                     id="profile-whatsapp-input"
                   />
                 </div>
@@ -247,7 +247,7 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdateSuccess, o
                           placeholder="Ex: SÃO PAULO"
                           value={city}
                           onChange={(e) => setCity(e.target.value.toUpperCase())}
-                          className="w-full pl-7.5 pr-2 py-1.8 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
+                          className="w-full pl-7.5 pr-2 py-1.8 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
                           id="profile-city-input"
                         />
                       </div>
@@ -265,7 +265,7 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdateSuccess, o
                           placeholder="Ex: CENTRO"
                           value={neighborhood}
                           onChange={(e) => setNeighborhood(e.target.value.toUpperCase())}
-                          className="w-full pl-7.5 pr-2 py-1.8 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
+                          className="w-full pl-7.5 pr-2 py-1.8 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
                           id="profile-neighborhood-input"
                         />
                       </div>
@@ -284,7 +284,7 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdateSuccess, o
                         placeholder="Ex: RUA DAS FLORES, 123"
                         value={streetNumber}
                         onChange={(e) => setStreetNumber(e.target.value.toUpperCase())}
-                        className="w-full pl-7.5 pr-3 py-1.8 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
+                        className="w-full pl-7.5 pr-3 py-1.8 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-bold"
                         id="profile-street-input"
                       />
                     </div>

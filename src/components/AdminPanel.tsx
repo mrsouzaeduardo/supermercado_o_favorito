@@ -2389,7 +2389,7 @@ export default function AdminPanel({
                                   setDriverSelectOrderId(order.id);
                                   setSelectedDriverId('');
                                 }}
-                                className="bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold px-3 py-1.5 rounded-lg border-b-2 border-indigo-850 transition-colors cursor-pointer text-xs"
+                                className="bg-emerald-100 hover:bg-emerald-600 active:bg-emerald-700 text-emerald-900 hover:text-white active:text-white font-extrabold px-3 py-1.5 rounded-lg border-b-2 border-emerald-300 hover:border-emerald-800 transition-all duration-200 cursor-pointer text-xs focus:ring-2 focus:ring-emerald-500/30"
                               >
                                 Mandar p/ Entrega 🚚
                               </button>

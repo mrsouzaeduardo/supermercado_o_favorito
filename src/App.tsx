@@ -399,7 +399,7 @@ export default function App() {
                         placeholder="Busque por nome do item..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-9 pr-9 py-2.5 bg-white border border-green-200/80 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-green-500/25 text-xs text-gray-800 transition-all font-semibold shadow-inner"
+                        className="w-full pl-9 pr-9 py-2.5 bg-white border border-green-200/80 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-green-500/25 text-base md:text-xs text-gray-800 transition-all font-semibold shadow-inner"
                         id="catalog-search-input"
                       />
                       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-700/60 font-bold">

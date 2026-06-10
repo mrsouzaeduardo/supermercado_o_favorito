@@ -397,7 +397,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                         placeholder="Digite seu e-mail cadastrado"
                         value={recoveryEmail}
                         onChange={(e) => setRecoveryEmail(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-green-150 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-green-150 rounded-xl text-base md:text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                         id="recovery-email-input"
                       />
                     </div>
@@ -475,7 +475,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                         placeholder="Crie sua nova senha de segurança"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full pl-10 pr-10 py-2.5 bg-white border border-green-150 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                        className="w-full pl-10 pr-10 py-2.5 bg-white border border-green-150 rounded-xl text-base md:text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                         id="new-password-input"
                       />
                       <button
@@ -595,7 +595,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                             setContact(val);
                           }
                         }}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-green-100 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-green-100 rounded-xl text-base md:text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                         id="auth-contact-input"
                       />
                     </div>
@@ -621,7 +621,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                         placeholder="Sua senha de segurança"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-10 pr-10 py-2.5 bg-white border border-green-100 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                        className="w-full pl-10 pr-10 py-2.5 bg-white border border-green-100 rounded-xl text-base md:text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                         id="auth-password-input"
                       />
                       <button
@@ -649,7 +649,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           placeholder="Ex: Eduardo Souza Morais"
                           value={regName}
                           onChange={(e) => setRegName(e.target.value.toUpperCase())}
-                          className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                          className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-name-input"
                         />
                       </div>
@@ -668,7 +668,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                             value={regWhatsapp}
                             onChange={(e) => setRegWhatsapp(formatWhatsAppNumber(e.target.value))}
                             maxLength={14}
-                            className="w-full pl-9 pr-3 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-mono font-bold"
+                            className="w-full pl-9 pr-3 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-mono font-bold"
                             id="reg-whatsapp-input"
                           />
                         </div>
@@ -682,7 +682,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                             placeholder="Ex: eduardo@email.com"
                             value={regEmail}
                             onChange={(e) => setRegEmail(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                            className="w-full pl-9 pr-3 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                             id="reg-email-input"
                           />
                         </div>
@@ -699,7 +699,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           placeholder="Cidade"
                           value={regCity}
                           onChange={(e) => setRegCity(e.target.value.toUpperCase())}
-                          className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                          className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-city-input"
                         />
                       </div>
@@ -711,7 +711,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           placeholder="Bairro"
                           value={regNeighborhood}
                           onChange={(e) => setRegNeighborhood(e.target.value.toUpperCase())}
-                          className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                          className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-neighborhood-input"
                         />
                       </div>
@@ -723,7 +723,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           placeholder="Rua, número"
                           value={regStreetNumber}
                           onChange={(e) => setRegStreetNumber(e.target.value.toUpperCase())}
-                          className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                          className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-street-input"
                         />
                       </div>
@@ -740,7 +740,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           placeholder="Crie sua senha de segurança"
                           value={regPassword}
                           onChange={(e) => setRegPassword(e.target.value)}
-                          className="w-full pl-9 pr-10 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                          className="w-full pl-9 pr-10 py-2 bg-white border border-green-150 rounded-xl text-base sm:text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-password-input"
                         />
                         <button
