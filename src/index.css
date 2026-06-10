@@ -51,40 +51,84 @@
     color: black !important;
   }
 
-  /* Hide absolutely everything by default using visibility */
-  body * {
+  /* 1. COMPLETELY HIDE general structural layout blocks to remove their printer footprint */
+  nav,
+  footer,
+  header,
+  aside,
+  .no-print,
+  .mesh-blob,
+  div[class*="pointer-events-none"] {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
     visibility: hidden !important;
-    background-color: transparent !important;
-  }
-  
-  #print-section, #print-section * {
-    visibility: visible !important;
   }
 
-  /* Strip intermediate wrapper layouts so their heights, scroll offsets, transforms or positioning
-     do not offset, shift, or push the print section to subsequent pages. This is highly compatible with Safari iOS. */
+  /* 2. HIDE all sibling contents under the Admin Panel container except our active modal overlay */
+  #admin-panel > *:not(#separation-modal-overlay) {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    visibility: hidden !important;
+  }
+
+  /* Also hide any screen warning banners inside main */
+  main > div > div:not(#admin-panel) {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* 3. Strip all height boundaries and positioning constraints on active nested containers */
   #root,
   #main-applet,
-  div[class*="min-h-screen"],
-  div[class*="inset-0"],
-  #modal-container,
-  #printable-area-container {
-    display: contents !important;
+  main,
+  #admin-panel,
+  #separation-modal-overlay {
+    display: block !important;
     position: static !important;
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
-    width: auto !important;
-    max-width: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
+    background: white !important;
     overflow: visible !important;
-    transform: none !important;
   }
-  
-  /* Reset print-section to act as a normal flowing static block, nested at the top of the page */
+
+  /* Also target modal containers specifically for static streaming document flow */
+  #modal-container {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  #printable-area-container {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* 4. Reset print-section to act as a normal flowing static block, nested at the top of the page */
   #print-section {
     display: flex !important;
     flex-direction: column !important;
@@ -104,7 +148,6 @@
   /* Hide non-printable components like action buttons, checkboxes, close controls */
   .no-print {
     display: none !important;
-    visibility: hidden !important;
   }
 
   /* Header Optimization */

@@ -39,7 +39,7 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
   const checkedItemsCount = order.items.filter(item => checkedItems[item.product.id]).reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-fadeIn select-none print:bg-white print:p-0 print:static print:h-auto print:overflow-visible">
+    <div id="separation-modal-overlay" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-fadeIn select-none print:bg-white print:p-0 print:static print:h-auto print:overflow-visible">
       {/* Modal Card */}
       <div className="bg-white rounded-3xl shadow-2xl border border-gray-150 max-w-2xl w-full h-full max-h-[90vh] flex flex-col overflow-hidden relative print:border-none print:shadow-none print:max-w-none print:h-auto print:static" id="modal-container">
         
