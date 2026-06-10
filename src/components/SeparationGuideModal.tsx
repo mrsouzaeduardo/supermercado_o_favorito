@@ -4,10 +4,12 @@ import { Order, CartItem } from '../types';
 
 interface SeparationGuideModalProps {
   order: Order;
+  clientName?: string;
+  clientContact?: string;
   onClose: () => void;
 }
 
-export default function SeparationGuideModal({ order, onClose }: SeparationGuideModalProps) {
+export default function SeparationGuideModal({ order, clientName, clientContact, onClose }: SeparationGuideModalProps) {
   // Local state to track which products have been picked (checked)
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
 
@@ -116,12 +118,12 @@ export default function SeparationGuideModal({ order, onClose }: SeparationGuide
                 <div className="space-y-1 text-xs">
                   <p className="text-gray-850 font-extrabold flex items-center gap-1.5 leading-tight">
                     <span className="font-normal text-gray-400 uppercase tracking-wider text-[9px] w-12 shrink-0">Nome:</span>
-                    {order.userContact}
+                    {clientName || 'Cliente'}
                   </p>
                   <p className="text-gray-750 font-medium flex items-center gap-1.5 leading-tight">
                     <span className="font-normal text-gray-400 uppercase tracking-wider text-[9px] w-12 shrink-0">Contato:</span>
                     <Smartphone size={11} className="text-emerald-600 no-print" />
-                    <span className="font-bold">{order.userContact}</span>
+                    <span className="font-bold">{clientContact || order.userContact}</span>
                   </p>
                   <p className="text-gray-750 font-medium flex items-center gap-1.5 leading-tight">
                     <span className="font-normal text-gray-400 uppercase tracking-wider text-[9px] w-12 shrink-0">Data:</span>

@@ -46,18 +46,30 @@ export default function App() {
 
   // Management controls for client loyalty points system
   const [pointsActive, setPointsActive] = useState<boolean>(() => {
-    const saved = localStorage.getItem('O_FAVORITO_POINTS_ACTIVE');
-    return saved !== 'false'; // default is true
+    try {
+      const saved = localStorage.getItem('O_FAVORITO_POINTS_ACTIVE');
+      return saved !== 'false'; // default is true
+    } catch (e) {
+      return true;
+    }
   });
 
   const [pointsValue, setPointsValue] = useState<number>(() => {
-    const saved = localStorage.getItem('O_FAVORITO_POINTS_VALUE');
-    return saved ? parseFloat(saved) : 0.10; // default to 0.10 (meaning 1 point = R$ 0.10)
+    try {
+      const saved = localStorage.getItem('O_FAVORITO_POINTS_VALUE');
+      return saved ? parseFloat(saved) : 0.10; // default to 0.10 (meaning 1 point = R$ 0.10)
+    } catch (e) {
+      return 0.10;
+    }
   });
 
   const [pointsDiscountType, setPointsDiscountType] = useState<'total' | 'delivery'>(() => {
-    const saved = localStorage.getItem('O_FAVORITO_POINTS_DISCOUNT_TYPE');
-    return saved === 'delivery' ? 'delivery' : 'total'; // default to total
+    try {
+      const saved = localStorage.getItem('O_FAVORITO_POINTS_DISCOUNT_TYPE');
+      return saved === 'delivery' ? 'delivery' : 'total'; // default to total
+    } catch (e) {
+      return 'total';
+    }
   });
 
   // Initialize and load persistent data
@@ -65,29 +77,33 @@ export default function App() {
     loadProducts();
 
     // Load active cart from localStorage if present
-    const savedCart = localStorage.getItem('O_FAVORITO_CART');
-    if (savedCart) {
-      try {
+    try {
+      const savedCart = localStorage.getItem('O_FAVORITO_CART');
+      if (savedCart) {
         setCartItems(JSON.parse(savedCart));
-      } catch (e) {
-        console.error('Failed to parse saved cart:', e);
       }
+    } catch (e) {
+      console.error('Failed to parse saved cart:', e);
     }
 
     // Load persistent logged user
-    const savedUser = localStorage.getItem('O_FAVORITO_LOGGED_USER');
-    if (savedUser) {
-      try {
+    try {
+      const savedUser = localStorage.getItem('O_FAVORITO_LOGGED_USER');
+      if (savedUser) {
         setUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error('Failed to parse saved user:', e);
       }
+    } catch (e) {
+      console.error('Failed to parse saved user:', e);
     }
   }, []);
 
   // Save cart to localstorage whenever it changes
   useEffect(() => {
-    localStorage.setItem('O_FAVORITO_CART', JSON.stringify(cartItems));
+    try {
+      localStorage.setItem('O_FAVORITO_CART', JSON.stringify(cartItems));
+    } catch (e) {
+      console.error('Failed to save cart:', e);
+    }
   }, [cartItems]);
 
   // Synchronize cart item quantities and product state with updated stock levels

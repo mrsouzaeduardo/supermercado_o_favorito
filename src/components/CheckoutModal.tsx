@@ -334,7 +334,7 @@ export default function CheckoutModal({
       const newOrder: Order = {
         id: orderId,
         userId: activeUser.id,
-        userContact: activeUser.email || activeUser.whatsapp || 'Cliente',
+        userContact: activeUser.whatsapp || activeUser.email || 'Cliente',
         items: [...cartItems],
         subtotal,
         deliveryFee,

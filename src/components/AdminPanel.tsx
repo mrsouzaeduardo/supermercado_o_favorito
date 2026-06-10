@@ -35,8 +35,12 @@ export default function AdminPanel({
   const [products, setProducts] = useState<Product[]>([]);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [globalMinStock, setGlobalMinStock] = useState<number>(() => {
-    const saved = localStorage.getItem('O_FAVORITO_GLOBAL_MIN_STOCK');
-    return saved ? parseInt(saved, 10) : 10;
+    try {
+      const saved = localStorage.getItem('O_FAVORITO_GLOBAL_MIN_STOCK');
+      return saved ? parseInt(saved, 10) : 10;
+    } catch (e) {
+      return 10;
+    }
   });
   const [replenishAmounts, setReplenishAmounts] = useState<Record<string, string>>({});
   const [customMinStocks, setCustomMinStocks] = useState<Record<string, string>>({});
@@ -49,6 +53,7 @@ export default function AdminPanel({
   const [searchClient, setSearchClient] = useState('');
   const [searchOrderQuery, setSearchOrderQuery] = useState('');
   const [ordersInnerTab, setOrdersInnerTab] = useState<'today' | 'others'>('today');
+  const [todayOrdersSubTab, setTodayOrdersSubTab] = useState<'received' | 'separating' | 'route' | 'finalized'>('received');
   const [searchOrderTodayQuery, setSearchOrderTodayQuery] = useState('');
   const [searchOrderOthersQuery, setSearchOrderOthersQuery] = useState('');
   const [searchProductQuery, setSearchProductQuery] = useState('');
@@ -85,6 +90,25 @@ export default function AdminPanel({
 
     return list;
   }, [clients, deliveryConfig]);
+
+  // Count of pending orders received today
+  const pendingTodayCount = React.useMemo(() => {
+    return orders.filter((o) => {
+      if (o.status !== 'pending') return false;
+      if (!o.createdAt) return false;
+      try {
+        const d = new Date(o.createdAt);
+        const today = new Date();
+        return (
+          d.getDate() === today.getDate() &&
+          d.getMonth() === today.getMonth() &&
+          d.getFullYear() === today.getFullYear()
+        );
+      } catch (err) {
+        return false;
+      }
+    }).length;
+  }, [orders]);
 
   // Deliveries filter states
   const [filterDriver, setFilterDriver] = useState('');
@@ -1029,7 +1053,7 @@ export default function AdminPanel({
               activeTab === 'orders' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-gray-500 hover:text-gray-800'
             }`}
           >
-            Pedidos ({orders.length})
+            Pedidos ({pendingTodayCount})
           </button>
           <button
             onClick={() => setActiveTab('products')}
@@ -1685,7 +1709,11 @@ export default function AdminPanel({
                             onChange={(e) => {
                               const val = parseInt(e.target.value, 10);
                               setGlobalMinStock(val);
-                              localStorage.setItem('O_FAVORITO_GLOBAL_MIN_STOCK', val.toString());
+                              try {
+                                localStorage.setItem('O_FAVORITO_GLOBAL_MIN_STOCK', val.toString());
+                              } catch (err) {
+                                console.error(err);
+                              }
                             }}
                             className="w-24 md:w-32 accent-emerald-600 cursor-ew-resize"
                           />
@@ -1974,16 +2002,31 @@ export default function AdminPanel({
             const todayOrders = orders.filter(o => isToday(o.createdAt));
             const otherOrders = orders.filter(o => !isToday(o.createdAt));
 
+            const countReceived = todayOrders.filter(o => o.status === 'pending').length;
+            const countSeparating = todayOrders.filter(o => o.status === 'processing').length;
+            const countRoute = todayOrders.filter(o => o.status === 'shipped').length;
+            const countFinalized = todayOrders.filter(o => o.status === 'delivered').length;
+
             const activeList = ordersInnerTab === 'today' ? todayOrders : otherOrders;
             const activeSearchQuery = ordersInnerTab === 'today' ? searchOrderTodayQuery : searchOrderOthersQuery;
             const setActiveSearchQuery = ordersInnerTab === 'today' ? setSearchOrderTodayQuery : setSearchOrderOthersQuery;
 
             const filteredOrders = activeList.filter((order) => {
+              if (ordersInnerTab === 'today') {
+                if (todayOrdersSubTab === 'received' && order.status !== 'pending') return false;
+                if (todayOrdersSubTab === 'separating' && order.status !== 'processing') return false;
+                if (todayOrdersSubTab === 'route' && order.status !== 'shipped') return false;
+                if (todayOrdersSubTab === 'finalized' && order.status !== 'delivered') return false;
+              }
+
               if (!activeSearchQuery.trim()) return true;
               const query = activeSearchQuery.toLowerCase();
+              const clientObj = clients.find(c => c.id === order.userId);
+              const clientNameMatch = clientObj && clientObj.name.toLowerCase().includes(query);
               return (
                 order.id.toLowerCase().includes(query) ||
                 (order.userContact && order.userContact.toLowerCase().includes(query)) ||
+                !!clientNameMatch ||
                 (order.address && order.address.toLowerCase().includes(query)) ||
                 (order.neighborhood && order.neighborhood.toLowerCase().includes(query)) ||
                 (order.city && order.city.toLowerCase().includes(query))
@@ -2087,6 +2130,83 @@ export default function AdminPanel({
                   </div>
                 </div>
 
+                {/* Sub-tabs for Today's Orders */}
+                {ordersInnerTab === 'today' && todayOrders.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 p-1 bg-slate-50 border border-slate-150 rounded-xl w-full">
+                    <button
+                      type="button"
+                      onClick={() => setTodayOrdersSubTab('received')}
+                      className={`flex-1 min-w-[130px] px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                        todayOrdersSubTab === 'received'
+                          ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-3xs font-extrabold'
+                          : 'bg-white border-transparent text-gray-500 hover:text-gray-800 hover:bg-white/60'
+                      }`}
+                    >
+                      <span className="text-[12px]">📩</span>
+                      <span>Pedido recebido</span>
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                        todayOrdersSubTab === 'received' ? 'bg-amber-100 text-amber-900 border border-amber-200' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {countReceived}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTodayOrdersSubTab('separating')}
+                      className={`flex-1 min-w-[130px] px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                        todayOrdersSubTab === 'separating'
+                          ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-3xs font-extrabold'
+                          : 'bg-white border-transparent text-gray-500 hover:text-gray-800 hover:bg-white/60'
+                      }`}
+                    >
+                      <span className="text-[12px]">📦</span>
+                      <span>Pedido em separação</span>
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                        todayOrdersSubTab === 'separating' ? 'bg-blue-100 text-blue-950 border border-blue-200' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {countSeparating}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTodayOrdersSubTab('route')}
+                      className={`flex-1 min-w-[130px] px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                        todayOrdersSubTab === 'route'
+                          ? 'bg-indigo-50 border-indigo-300 text-indigo-900 shadow-3xs font-extrabold'
+                          : 'bg-white border-transparent text-gray-500 hover:text-gray-800 hover:bg-white/60'
+                      }`}
+                    >
+                      <span className="text-[12px]">🚚</span>
+                      <span>Pedidos em rotas</span>
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                        todayOrdersSubTab === 'route' ? 'bg-indigo-100 text-indigo-950 border border-indigo-250' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {countRoute}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTodayOrdersSubTab('finalized')}
+                      className={`flex-1 min-w-[130px] px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                        todayOrdersSubTab === 'finalized'
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-3xs font-extrabold'
+                          : 'bg-white border-transparent text-gray-500 hover:text-gray-800 hover:bg-white/60'
+                      }`}
+                    >
+                      <span className="text-[12px]">✅</span>
+                      <span>Pedidos finalizados</span>
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                        todayOrdersSubTab === 'finalized' ? 'bg-emerald-100 text-emerald-950 border border-emerald-250' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {countFinalized}
+                      </span>
+                    </button>
+                  </div>
+                )}
+
                 {orders.length === 0 ? (
                   <div className="text-center p-12 bg-white border border-gray-150 rounded-2xl text-xs text-gray-400 flex flex-col items-center justify-center gap-2">
                     <span className="text-lg">📦</span>
@@ -2104,8 +2224,19 @@ export default function AdminPanel({
                     </p>
                   </div>
                 ) : filteredOrders.length === 0 ? (
-                  <div className="text-center p-12 bg-white border border-gray-150 rounded-2xl text-xs text-gray-400" id="no-orders-search-result">
-                    Nenhum pedido encontrado para o termo de busca "{activeSearchQuery}".
+                  <div className="text-center p-12 bg-white border border-gray-150 rounded-2xl text-xs text-gray-400 flex flex-col items-center justify-center gap-2" id="no-orders-search-result">
+                    <span className="text-xl">📭</span>
+                    <p className="font-bold uppercase tracking-wider text-[10px] text-gray-500">
+                      {activeSearchQuery
+                        ? `Nenhum pedido encontrado para "${activeSearchQuery}".`
+                        : ordersInnerTab === 'today'
+                          ? `Nenhum pedido hoje na guia "${
+                              todayOrdersSubTab === 'received' ? 'Pedido recebido' :
+                              todayOrdersSubTab === 'separating' ? 'Pedido em separação' :
+                              todayOrdersSubTab === 'route' ? 'Pedidos em rotas' : 'Pedidos finalizados'
+                            }".`
+                          : 'Nenhum pedido correspondente encontrado.'}
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -2132,7 +2263,20 @@ export default function AdminPanel({
                         </div>
 
                         <p className="text-gray-500 font-medium">
-                          Cliente: <strong className="text-gray-700 font-semibold">{order.userContact}</strong> - 
+                          Cliente:{' '}
+                          <strong className="text-gray-700 font-bold">
+                            {(() => {
+                              const clientObj = clients.find(c => c.id === order.userId);
+                              return clientObj ? clientObj.name : 'Cliente';
+                            })()}
+                          </strong>{' '}
+                          <span className="text-gray-400 text-[11px] font-normal">
+                            ({(() => {
+                              const clientObj = clients.find(c => c.id === order.userId);
+                              return clientObj ? (clientObj.whatsapp || clientObj.email || order.userContact) : order.userContact;
+                            })()})
+                          </span>{' '}
+                          -{' '}
                           Data: <strong className="text-gray-700 font-semibold">{new Date(order.createdAt).toLocaleDateString('pt-BR')}</strong>
                         </p>
 
@@ -3583,6 +3727,11 @@ export default function AdminPanel({
       {separationOrder && (
         <SeparationGuideModal
           order={separationOrder}
+          clientName={clients.find(c => c.id === separationOrder.userId)?.name}
+          clientContact={(() => {
+            const clientObj = clients.find(c => c.id === separationOrder.userId);
+            return clientObj ? (clientObj.whatsapp || clientObj.email) : undefined;
+          })()}
           onClose={() => setSeparationOrder(null)}
         />
       )}
