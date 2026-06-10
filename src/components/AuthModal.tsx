@@ -22,9 +22,10 @@ interface AuthModalProps {
   onClose: () => void;
   onLoginSuccess: (user: UserType) => void;
   pointsActive: boolean;
+  onOpenTerms?: () => void;
 }
 
-export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActive }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActive, onOpenTerms }: AuthModalProps) {
   const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
   const [activeTab, setActiveTab] = useState<'email' | 'whatsapp'>('email');
   const [name, setName] = useState('');
@@ -45,26 +46,125 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
   const [regStreetNumber, setRegStreetNumber] = useState('');
   const [regPassword, setRegPassword] = useState('');
 
+  // Password Recovery Multi-step States
+  const [recoveryStep, setRecoveryStep] = useState<'idle' | 'request' | 'verify'>('idle');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
   if (!isOpen) return null;
 
-  const handleForgotPassword = async () => {
+  const handleForgotPasswordTrigger = () => {
     setError('');
     setRecoveryMessage('');
-    if (!contact.trim()) {
-      setError('Por favor, informe primeiro seu E-mail ou WhatsApp no campo de contato.');
+    // Prefill the email if user already typed it in the contact field
+    if (contact.trim() && contact.includes('@')) {
+      setRecoveryEmail(contact.trim());
+    } else {
+      setRecoveryEmail('');
+    }
+    setRecoveryStep('request');
+  };
+
+  const handleSendResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setRecoveryMessage('');
+    
+    if (!recoveryEmail.trim() || !recoveryEmail.includes('@')) {
+      setError('Por favor, informe um endereço de e-mail válido para receber o código.');
       return;
     }
     
     setLoading(true);
     try {
-      const result = await db.resetUserPassword(contact);
-      if (result.success) {
-        setRecoveryMessage(result.message);
+      const response = await fetch('/api/send-reset-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contact: recoveryEmail })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setRecoveryMessage(data.message);
+        setRecoveryStep('verify');
       } else {
-        setError(result.message);
+        setError(data.message || 'Erro ao solicitar código de recuperação.');
       }
     } catch (err) {
-      setError('Erro ao enviar solicitação de recuperação. Tente novamente.');
+      setError('Sua solicitação de código falhou. Certifique-se de que o servidor backend está online.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setRecoveryMessage('');
+
+    if (!verificationCode.trim() || verificationCode.trim().length !== 8) {
+      setError('Por favor, informe o código de verificação alfanumérico exato de 8 caracteres.');
+      return;
+    }
+
+    if (!newPassword.trim() || newPassword.trim().length < 4) {
+      setError('Sua nova senha deve possuir pelo menos 4 caracteres.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/complete-reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact: recoveryEmail,
+          code: verificationCode,
+          newPassword: newPassword
+        })
+      });
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Redundancy: update password locally to support mock-local database fallback perfectly
+        await db.resetUserPassword(recoveryEmail, newPassword);
+
+        // Auto-login on reset password success
+        try {
+          const loggedInUser = await db.loginOrRegister(recoveryEmail, '', newPassword);
+          setSuccess(true);
+          setTimeout(() => {
+            onLoginSuccess(loggedInUser);
+            onClose();
+            setSuccess(false);
+            setRecoveryStep('idle');
+            setRecoveryEmail('');
+            setVerificationCode('');
+            setNewPassword('');
+            // Reset fields
+            setName('');
+            setContact('');
+            setPassword('');
+          }, 1500);
+        } catch (loginErr) {
+          // Fallback if direct login fails
+          setSuccess(true);
+          setTimeout(() => {
+            setSuccess(false);
+            setRecoveryStep('idle');
+            setRecoveryEmail('');
+            setVerificationCode('');
+            setNewPassword('');
+            setContact(recoveryEmail);
+            setPassword(newPassword);
+          }, 1500);
+        }
+      } else {
+        setError(data.message || 'Erro ao redefinir sua senha.');
+      }
+    } catch (err) {
+      setError('Erro de comunicação para validação do código de segurança.');
     } finally {
       setLoading(false);
     }
@@ -205,36 +305,38 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
         </div>
 
         {/* Tabs for Entrar vs Criar Conta */}
-        <div className="px-6 pt-3 grid grid-cols-2 text-center text-xs border-b border-gray-100" id="auth-mode-selector">
-          <button
-            type="button"
-            className={`pb-2.5 font-bold border-b-2 text-sm tracking-wider uppercase transition-all cursor-pointer ${
-              authTab === 'login'
-                ? 'border-emerald-600 text-emerald-800 font-black'
-                : 'border-transparent text-gray-450 hover:text-gray-600'
-            }`}
-            onClick={() => {
-              setAuthTab('login');
-              setError('');
-            }}
-          >
-            Entrar
-          </button>
-          <button
-            type="button"
-            className={`pb-2.5 font-bold border-b-2 text-sm tracking-wider uppercase transition-all cursor-pointer ${
-              authTab === 'register'
-                ? 'border-emerald-600 text-emerald-800 font-black'
-                : 'border-transparent text-gray-450 hover:text-gray-600'
-            }`}
-            onClick={() => {
-              setAuthTab('register');
-              setError('');
-            }}
-          >
-            Criar Conta
-          </button>
-        </div>
+        {recoveryStep === 'idle' && (
+          <div className="px-6 pt-3 grid grid-cols-2 text-center text-xs border-b border-gray-100" id="auth-mode-selector">
+            <button
+              type="button"
+              className={`pb-2.5 font-bold border-b-2 text-sm tracking-wider uppercase transition-all cursor-pointer ${
+                authTab === 'login'
+                  ? 'border-emerald-600 text-emerald-800 font-black'
+                  : 'border-transparent text-gray-450 hover:text-gray-600'
+              }`}
+              onClick={() => {
+                setAuthTab('login');
+                setError('');
+              }}
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              className={`pb-2.5 font-bold border-b-2 text-sm tracking-wider uppercase transition-all cursor-pointer ${
+                authTab === 'register'
+                  ? 'border-emerald-600 text-emerald-800 font-black'
+                  : 'border-transparent text-gray-450 hover:text-gray-600'
+              }`}
+              onClick={() => {
+                setAuthTab('register');
+                setError('');
+              }}
+            >
+              Criar Conta
+            </button>
+          </div>
+        )}
 
         {/* Modal Body */}
         <div className="p-6">
@@ -256,7 +358,166 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
               )}
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            recoveryStep === 'request' ? (
+              <form onSubmit={handleSendResetCode} className="space-y-4">
+                {/* Error Alert */}
+                {error && (
+                  <div className="p-3 bg-rose-50 text-rose-700 text-xs rounded-lg border border-rose-100 font-medium animate-pulse">
+                    ⚠️ {error}
+                  </div>
+                )}
+
+                {/* Recovery success Alert */}
+                {recoveryMessage && (
+                  <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-lg border border-emerald-100 font-medium">
+                    {recoveryMessage}
+                  </div>
+                )}
+
+                {/* Password Recovery Request Step */}
+                <div className="space-y-4 animate-fadeIn">
+                  <div className="p-3 bg-emerald-50/70 text-emerald-800 text-xs rounded-xl border border-emerald-100 flex items-start gap-2.5">
+                    <HelpCircle className="text-emerald-700 mt-0.5 shrink-0" size={16} />
+                    <div className="space-y-0.5">
+                      <span className="font-bold block text-emerald-800">Recuperação de Senha</span>
+                      <span className="block text-[11px] text-emerald-600 leading-normal">
+                        Para redefinir sua senha, digite abaixo seu e-mail cadastrado.
+                        Enviaremos um código de verificação de <strong>8 caracteres alfanuméricos</strong> via SMTP.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Endereço de E-mail</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-800/40" size={18} />
+                      <input
+                        type="email"
+                        required
+                        placeholder="Digite seu e-mail cadastrado"
+                        value={recoveryEmail}
+                        onChange={(e) => setRecoveryEmail(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-green-150 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                        id="recovery-email-input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setRecoveryStep('idle')}
+                      className="w-1/2 py-2.5 px-4 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold rounded-xl border border-gray-200 transition-all text-xs cursor-pointer text-center"
+                    >
+                      Voltar ao Login
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-1/2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-bold rounded-xl shadow-md transition-all text-xs cursor-pointer text-center flex justify-center items-center"
+                    >
+                      {loading ? 'Processando...' : 'Obter Código'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : recoveryStep === 'verify' ? (
+              <form onSubmit={handleCompleteReset} className="space-y-4">
+                {/* Error Alert */}
+                {error && (
+                  <div className="p-3 bg-rose-50 text-rose-700 text-xs rounded-lg border border-rose-100 font-medium animate-pulse">
+                    ⚠️ {error}
+                  </div>
+                )}
+
+                {/* Recovery success Alert */}
+                {recoveryMessage && (
+                  <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-lg border border-emerald-100 font-medium">
+                    {recoveryMessage}
+                  </div>
+                )}
+
+                {/* Password Recovery Verification and Reset Step */}
+                <div className="space-y-4 animate-fadeIn">
+                  <div className="p-3 bg-emerald-50/70 text-emerald-850 text-xs rounded-xl border border-emerald-150 flex items-start gap-2.5">
+                    <Check className="text-emerald-700 mt-0.5 shrink-0" size={16} />
+                    <div className="space-y-0.5">
+                      <span className="font-bold block text-emerald-800">Código Enviado!</span>
+                      <span className="block text-[11px] text-emerald-600 leading-normal">
+                        O código alfanumérico de 8 caracteres foi enviado para <strong>{recoveryEmail}</strong>. Insira-o abaixo com sua nova senha:
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Verification Code */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block text-center">Código de Verificação (8 dígitos)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: A1B2C3D4"
+                      maxLength={8}
+                      value={verificationCode}
+                      onChange={(e) => setVerificationCode(e.target.value.toUpperCase())}
+                      className="w-full px-4 py-3 bg-white border border-green-150 rounded-xl text-center text-xl focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-emerald-800 font-mono font-black tracking-widest uppercase"
+                      id="verification-code-input"
+                    />
+                  </div>
+
+                  {/* New Password */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Sua Nova Senha de Acesso</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-800/40" size={18} />
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        required
+                        placeholder="Crie sua nova senha de segurança"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full pl-10 pr-10 py-2.5 bg-white border border-green-150 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
+                        id="new-password-input"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-800/50 hover:text-emerald-800 transition-colors"
+                      >
+                        {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setRecoveryStep('request')}
+                      className="w-1/2 py-2.5 px-4 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold rounded-xl border border-gray-200 transition-all text-xs cursor-pointer text-center"
+                    >
+                      Reenviar Código
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-1/2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-bold rounded-xl shadow-md transition-all text-xs cursor-pointer text-center flex justify-center items-center"
+                    >
+                      {loading ? 'Processando...' : 'Confirmar Senha'}
+                    </button>
+                  </div>
+
+                  <div className="text-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setRecoveryStep('idle')}
+                      className="text-xs text-emerald-750 hover:text-emerald-950 font-bold hover:underline cursor-pointer"
+                    >
+                      Voltar ao Login
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
               {/* Error Alert */}
               {error && (
                 <div className="p-3 bg-rose-50 text-rose-700 text-xs rounded-lg border border-rose-100 font-medium animate-pulse">
@@ -346,7 +607,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                       <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Senha de Acesso</label>
                       <button
                         type="button"
-                        onClick={handleForgotPassword}
+                        onClick={handleForgotPasswordTrigger}
                         className="text-[10px] text-emerald-750 hover:text-emerald-950 font-bold hover:underline cursor-pointer"
                       >
                         Esqueci minha senha
@@ -387,7 +648,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           required
                           placeholder="Ex: Eduardo Souza Morais"
                           value={regName}
-                          onChange={(e) => setRegName(e.target.value)}
+                          onChange={(e) => setRegName(e.target.value.toUpperCase())}
                           className="w-full pl-9 pr-4 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-name-input"
                         />
@@ -437,7 +698,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           required
                           placeholder="Cidade"
                           value={regCity}
-                          onChange={(e) => setRegCity(e.target.value)}
+                          onChange={(e) => setRegCity(e.target.value.toUpperCase())}
                           className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-city-input"
                         />
@@ -449,7 +710,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           required
                           placeholder="Bairro"
                           value={regNeighborhood}
-                          onChange={(e) => setRegNeighborhood(e.target.value)}
+                          onChange={(e) => setRegNeighborhood(e.target.value.toUpperCase())}
                           className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-neighborhood-input"
                         />
@@ -461,7 +722,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                           required
                           placeholder="Rua, número"
                           value={regStreetNumber}
-                          onChange={(e) => setRegStreetNumber(e.target.value)}
+                          onChange={(e) => setRegStreetNumber(e.target.value.toUpperCase())}
                           className="w-full px-2.5 py-2 bg-white border border-green-150 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-green-500/20 focus:bg-white transition-all text-slate-850 font-medium"
                           id="reg-street-input"
                         />
@@ -491,6 +752,20 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                         </button>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Terms of Use registration consent phrase */}
+                  <div className="text-center pt-1.5 pb-0.5">
+                    <p className="text-[10.5px] text-gray-500 font-bold leading-relaxed">
+                      Ao se cadastrar você concorda com os{' '}
+                      <button
+                        type="button"
+                        onClick={onOpenTerms}
+                        className="text-emerald-700 hover:text-emerald-900 font-extrabold underline cursor-pointer"
+                      >
+                        termos de uso
+                      </button>
+                    </p>
                   </div>
                 </>
               )}
@@ -524,7 +799,8 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, pointsActiv
                 {loading ? 'Processando...' : authTab === 'login' ? 'Entrar na Conta' : (pointsActive ? 'Cadastrar e Ganhar Pontos' : 'Finalizar Cadastro')}
               </button>
             </form>
-          )}
+          )
+        )}
         </div>
       </div>
     </div>

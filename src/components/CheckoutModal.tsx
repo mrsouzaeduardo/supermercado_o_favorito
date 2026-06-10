@@ -64,6 +64,9 @@ interface CheckoutModalProps {
   onUpdateCartQty: (productId: string, quantity: number) => void;
   onClearCart: () => void;
   pointsActive: boolean;
+  pointsValue?: number;
+  pointsDiscountType?: 'total' | 'delivery';
+  onEditProfileTrigger?: () => void;
 }
 
 export default function CheckoutModal({
@@ -76,6 +79,9 @@ export default function CheckoutModal({
   onUpdateCartQty,
   onClearCart,
   pointsActive,
+  pointsValue = 0.10,
+  pointsDiscountType = 'total',
+  onEditProfileTrigger,
 }: CheckoutModalProps) {
   const [cep, setCep] = useState('');
   const [address, setAddress] = useState('');
@@ -92,6 +98,24 @@ export default function CheckoutModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [guestContact, setGuestContact] = useState('');
+  const [addressSource, setAddressSource] = useState<'profile' | 'new'>('profile');
+
+  const handleAddressSourceChange = (source: 'profile' | 'new') => {
+    setAddressSource(source);
+    if (source === 'profile' && user && user.neighborhood) {
+      setCity((user.city || '').trim().toUpperCase());
+      setNeighborhood((user.neighborhood || '').trim().toUpperCase());
+      setAddress((user.streetNumber || '').trim().toUpperCase());
+      setNumber('S/N');
+      setCep('CADASTRO');
+    } else {
+      setCity('');
+      setNeighborhood('');
+      setAddress('');
+      setNumber('');
+      setCep('');
+    }
+  };
 
   // Delivery scheduling states
   const [deliveryType, setDeliveryType] = useState<'fast' | 'scheduled'>('fast');
@@ -109,8 +133,24 @@ export default function CheckoutModal({
       if (dates.length > 0) {
         setSelectedDate(dates[0].dateString);
       }
+
+      if (user && user.neighborhood) {
+        setAddressSource('profile');
+        setCity((user.city || '').trim().toUpperCase());
+        setNeighborhood((user.neighborhood || '').trim().toUpperCase());
+        setAddress((user.streetNumber || '').trim().toUpperCase());
+        setNumber('S/N');
+        setCep('CADASTRO');
+      } else {
+        setAddressSource('new');
+        setCity('');
+        setNeighborhood('');
+        setAddress('');
+        setNumber('');
+        setCep('');
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, user]);
 
   useEffect(() => {
     if (isOpen && selectedDate) {
@@ -133,14 +173,50 @@ export default function CheckoutModal({
     return acc + price * item.quantity;
   }, 0);
 
-  // Loyalty points available & value (e.g. 10 points = R$ 1,00)
-  const POINTS_CONVERSION_RATE = 10; // 10 points = 1 BRL discount
+  // Loyalty points available & value
   const maxRedeemablePoints = user ? Math.floor(user.points) : 0;
-  const pointsDiscount = (pointsActive && usePoints) ? Math.min(maxRedeemablePoints / POINTS_CONVERSION_RATE, subtotal) : 0;
-  const pointsToDeduct = (pointsActive && usePoints) ? Math.floor(pointsDiscount * POINTS_CONVERSION_RATE) : 0;
+  const pointsWorth = maxRedeemablePoints * pointsValue;
+  const pointsLimit = pointsDiscountType === 'delivery' ? deliveryFee : (subtotal + deliveryFee);
+  const pointsDiscount = (pointsActive && usePoints) ? Math.min(pointsWorth, pointsLimit) : 0;
+  const pointsToDeduct = (pointsActive && usePoints && pointsValue > 0) ? Math.ceil(pointsDiscount / pointsValue) : 0;
 
   // New points to earn on purchase (sum of all items pointsAwarded * qty)
   const pointsToEarn = pointsActive ? cartItems.reduce((acc, item) => acc + item.product.pointsAwarded * item.quantity, 0) : 0;
+
+  // Filter slots based on the day of the week AND if the slot's start time hasn't passed today
+  const displayedSlots = React.useMemo(() => {
+    const selDateObj = getUpcomingDates().find(d => d.dateString === selectedDate);
+    if (!selDateObj) return [];
+
+    // Filter by day of the week
+    let filtered = slots.filter(s => s.dayOfWeek.toLowerCase() === selDateObj.dayOfWeek.toLowerCase());
+
+    // If selectedDate is today, filter out passed slots
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayDateStr = `${year}-${month}-${day}`;
+
+    if (selectedDate === todayDateStr) {
+      const nowHour = today.getHours();
+      const nowMinute = today.getMinutes();
+      const currentMinutes = nowHour * 60 + nowMinute;
+
+      filtered = filtered.filter(s => {
+        if (!s.startTime) return false;
+        const parts = s.startTime.split(':');
+        const sh = parseInt(parts[0], 10) || 0;
+        const sm = parseInt(parts[1], 10) || 0;
+        const slotStartMinutes = sh * 60 + sm;
+
+        // Slot start time must be in the future relative to now relative to the current day
+        return slotStartMinutes > currentMinutes;
+      });
+    }
+
+    return filtered;
+  }, [slots, selectedDate]);
 
   // Delivery tax calculation
   useEffect(() => {
@@ -508,17 +584,28 @@ export default function CheckoutModal({
               <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl flex justify-between items-center">
                 <div className="space-y-0.5">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 block">Cliente Conectado</span>
-                  <span className="text-xs font-bold text-gray-800 block">{user.name}</span>
+                  <button
+                    type="button"
+                    onClick={onEditProfileTrigger}
+                    className="text-xs font-black text-gray-800 hover:text-emerald-700 block text-left underline decoration-dotted decoration-emerald-500/50 hover:decoration-solid underline-offset-2 transition-colors cursor-pointer"
+                    title="Clique para editar seu perfil e endereço"
+                    id="checkout-edit-profile-btn"
+                  >
+                    {user.name} ✏️
+                  </button>
                 </div>
 
                 {/* Loyalty Point Redemption Slide */}
                 {pointsActive && (
-                  maxRedeemablePoints >= 10 ? (
+                  maxRedeemablePoints > 0 ? (
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <span className="text-[10px] text-gray-400 block font-semibold">Usar meus pontos?</span>
-                        <span className="text-xs text-emerald-700 block font-bold">
-                          {maxRedeemablePoints} pts = R$ {(maxRedeemablePoints / POINTS_CONVERSION_RATE).toFixed(2)}
+                        <span className="text-[10px] text-gray-400 block font-semibold leading-none mb-0.5">Usar meus pontos?</span>
+                        <span className="text-xs text-emerald-700 block font-black leading-none">
+                          {maxRedeemablePoints} pts = R$ {(maxRedeemablePoints * pointsValue).toFixed(2).replace('.', ',')}
+                        </span>
+                        <span className="text-[9px] text-emerald-600 block font-medium mt-0.5 leading-none">
+                          {pointsDiscountType === 'delivery' ? 'Apenas no Frete' : 'Na Compra Total'}
                         </span>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
@@ -549,97 +636,141 @@ export default function CheckoutModal({
                 1. Endereço de Entrega
               </h4>
 
-              {/* CEP Input with ViaCEP Action */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="relative w-full sm:w-56">
-                  <input
-                    type="text"
-                    maxLength={9}
-                    placeholder="CEP (ex: 01001-000)"
-                    value={cep}
-                    onKeyDown={handleCepKeyDown}
-                    onChange={(e) => setCep(e.target.value)}
-                    className="w-full pl-3 pr-10 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal"
-                    id="cep-input"
-                  />
-                  {isSearchingCep ? (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                  ) : (
+              {user && user.neighborhood && (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-2">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-2">Destino do Pedido</span>
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={handleCepSearch}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-emerald-850 hover:text-emerald-950 bg-emerald-100 rounded-full hover:bg-emerald-200 transition-colors cursor-pointer"
-                      title="Buscar Endereço pelo CEP"
-                      id="cep-search-button"
+                      onClick={() => handleAddressSourceChange('profile')}
+                      className={`p-2 py-1.5 rounded-lg border text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer text-center ${
+                        addressSource === 'profile'
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-850 shadow-3xs'
+                          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
                     >
-                      <Search size={14} />
+                      <span>Usar Endereço Salvo</span>
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => handleAddressSourceChange('new')}
+                      className={`p-2 py-1.5 rounded-lg border text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer text-center ${
+                        addressSource === 'new'
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-850 shadow-3xs'
+                          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span>Outro Endereço</span>
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center">
-                  <span className="text-[10px] text-gray-500 font-extrabold leading-tight">Pressione ENTER ou clique no botão para buscar o CEP</span>
-                </div>
-              </div>
-
-              {cepError && (
-                <div className="text-[10px] text-rose-600 font-bold">{cepError}</div>
               )}
 
-              {/* Address details */}
-              <div className="grid grid-cols-12 gap-2">
-                <div className="col-span-8 sm:col-span-8">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Logradouro / Rua / Avenida"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal transition-all"
-                  />
+              {addressSource === 'profile' && user && user.neighborhood ? (
+                <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-1">
+                  <span className="text-[10px] text-emerald-800 font-extrabold uppercase tracking-wider block">Endereço de Entrega do Cadastro</span>
+                  <div className="text-xs text-gray-700 font-extrabold flex flex-col gap-0.5">
+                    <span><strong className="text-emerald-950 font-bold">Rua / Nº:</strong> {user.streetNumber}</span>
+                    <span><strong className="text-emerald-950 font-bold">Bairro:</strong> {user.neighborhood}</span>
+                    <span><strong className="text-emerald-950 font-bold">Cidade:</strong> {user.city}</span>
+                  </div>
+                  <span className="text-[9px] text-gray-400 block font-semibold pt-0.5">Configurado a partir do seu cadastro padrão.</span>
                 </div>
-                <div className="col-span-4 sm:col-span-4">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Nº"
-                    value={number}
-                    onChange={(e) => setNumber(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal transition-all"
-                    id="address-number"
-                  />
-                </div>
+              ) : (
+                <>
+                  {/* CEP Input with ViaCEP Action */}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative w-full sm:w-56">
+                      <input
+                        type="text"
+                        maxLength={9}
+                        placeholder="CEP (ex: 01001-000)"
+                        value={cep}
+                        onKeyDown={handleCepKeyDown}
+                        onChange={(e) => setCep(e.target.value)}
+                        className="w-full pl-3 pr-10 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal"
+                        id="cep-input"
+                      />
+                      {isSearchingCep ? (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleCepSearch}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-emerald-850 hover:text-emerald-950 bg-emerald-100 rounded-full hover:bg-emerald-200 transition-colors cursor-pointer"
+                          title="Buscar Endereço pelo CEP"
+                          id="cep-search-button"
+                        >
+                          <Search size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center">
+                      <span className="text-[10px] text-gray-500 font-extrabold leading-tight">Pressione ENTER ou clique no botão para buscar o CEP</span>
+                    </div>
+                  </div>
 
-                <div className="col-span-12 sm:col-span-4">
-                  <input
-                    type="text"
-                    placeholder="Apto / bloco / comp."
-                    value={complement}
-                    onChange={(e) => setComplement(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal transition-all"
-                  />
-                </div>
-                <div className="col-span-6 sm:col-span-4">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Bairro"
-                    value={neighborhood}
-                    onChange={(e) => setNeighborhood(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal transition-all"
-                  />
-                </div>
-                <div className="col-span-6 sm:col-span-4">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Cidade"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-gray-100 border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden text-gray-650 font-extrabold cursor-not-allowed"
-                    disabled
-                  />
-                </div>
-              </div>
+                  {cepError && (
+                    <div className="text-[10px] text-rose-600 font-bold">{cepError}</div>
+                  )}
+
+                  {/* Address details */}
+                  <div className="grid grid-cols-12 gap-2">
+                    <div className="col-span-8 sm:col-span-8">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Logradouro / Rua / Avenida"
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value.toUpperCase())}
+                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal transition-all"
+                      />
+                    </div>
+                    <div className="col-span-4 sm:col-span-4">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Nº"
+                        value={number}
+                        onChange={(e) => setNumber(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal transition-all"
+                        id="address-number"
+                      />
+                    </div>
+
+                    <div className="col-span-12 sm:col-span-4">
+                      <input
+                        type="text"
+                        placeholder="Apto / bloco / comp."
+                        value={complement}
+                        onChange={(e) => setComplement(e.target.value.toUpperCase())}
+                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal transition-all"
+                      />
+                    </div>
+                    <div className="col-span-6 sm:col-span-4">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Bairro"
+                        value={neighborhood}
+                        onChange={(e) => setNeighborhood(e.target.value.toUpperCase())}
+                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-605 text-gray-900 font-extrabold placeholder:text-gray-400 placeholder:font-normal transition-all"
+                      />
+                    </div>
+                    <div className="col-span-6 sm:col-span-4">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Cidade"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value.toUpperCase())}
+                        className="w-full px-3 py-2.5 bg-gray-100 border border-gray-300 rounded-xl text-base sm:text-xs focus:outline-hidden text-gray-650 font-extrabold cursor-not-allowed"
+                        disabled
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Delivery Option / Scheduling */}
@@ -716,59 +847,51 @@ export default function CheckoutModal({
                     <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Janelas de Horários Disponíveis:</span>
                     
                     {/* Filter slots matching day of the week */}
-                    {slots.filter(s => {
-                      const selDateObj = getUpcomingDates().find(d => d.dateString === selectedDate);
-                      return !selDateObj || s.dayOfWeek.toLowerCase() === selDateObj.dayOfWeek.toLowerCase();
-                    }).length === 0 ? (
+                    {displayedSlots.length === 0 ? (
                       <div className="text-[10px] text-gray-400 font-bold p-2 text-center bg-white border border-gray-150 rounded-lg">
                         Nenhuma janela de entrega disponível para este dia.
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 gap-1.5 max-h-[140px] overflow-y-auto pr-1">
-                        {slots
-                          .filter(s => {
-                            const selDateObj = getUpcomingDates().find(d => d.dateString === selectedDate);
-                            return !selDateObj || s.dayOfWeek.toLowerCase() === selDateObj.dayOfWeek.toLowerCase();
-                          })
-                          .map((slot) => {
-                            const bookedCount = slotUsage[slot.id] || 0;
-                            const isFull = bookedCount >= slot.maxOrders;
-                            const isSelected = selectedSlotId === slot.id;
+                        {displayedSlots.map((slot) => {
+                          const bookedCount = slotUsage[slot.id] || 0;
+                          const isFull = bookedCount >= slot.maxOrders;
+                          const isSelected = selectedSlotId === slot.id;
 
-                            return (
-                              <button
-                                key={slot.id}
-                                type="button"
-                                disabled={isFull}
-                                onClick={() => setSelectedSlotId(slot.id)}
-                                className={`p-2 rounded-lg border text-left transition-all relative cursor-pointer ${
-                                  isFull
-                                    ? 'bg-gray-100 border-gray-150 text-gray-350 cursor-not-allowed opacity-60'
-                                    : isSelected
-                                    ? 'bg-emerald-50 border-emerald-600 text-emerald-800 ring-1 ring-emerald-600'
-                                    : 'bg-white border-gray-205 hover:border-gray-300 text-gray-700'
-                                }`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <div className="flex items-center gap-1">
-                                    <Clock size={11} className={isSelected ? 'text-emerald-700' : 'text-gray-400'} />
-                                    <span className="text-[11px] font-extrabold">
-                                      {slot.startTime.slice(0, 5)} - {slot.endTime.slice(0, 5)}
-                                    </span>
-                                  </div>
-                                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded-full ${
-                                    isFull
-                                      ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                                      : isSelected
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-gray-100 text-gray-500'
-                                  }`}>
-                                    {isFull ? 'Esgotado' : `${slot.maxOrders - bookedCount} vagas`}
+                          return (
+                            <button
+                              key={slot.id}
+                              type="button"
+                              disabled={isFull}
+                              onClick={() => setSelectedSlotId(slot.id)}
+                              className={`p-2 rounded-lg border text-left transition-all relative cursor-pointer ${
+                                isFull
+                                  ? 'bg-gray-100 border-gray-150 text-gray-350 cursor-not-allowed opacity-60'
+                                  : isSelected
+                                  ? 'bg-emerald-50 border-emerald-600 text-emerald-800 ring-1 ring-emerald-600'
+                                  : 'bg-white border-gray-205 hover:border-gray-300 text-gray-700'
+                              }`}
+                            >
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-1">
+                                  <Clock size={11} className={isSelected ? 'text-emerald-700' : 'text-gray-400'} />
+                                  <span className="text-[11px] font-extrabold">
+                                    {slot.startTime.slice(0, 5)} - {slot.endTime.slice(0, 5)}
                                   </span>
                                 </div>
-                              </button>
-                            );
-                          })}
+                                <span className={`text-[8px] font-bold px-1 py-0.5 rounded-full ${
+                                  isFull
+                                    ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                                    : isSelected
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-gray-100 text-gray-500'
+                                }`}>
+                                  {isFull ? 'Esgotado' : `${slot.maxOrders - bookedCount} vagas`}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

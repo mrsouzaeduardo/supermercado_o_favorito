@@ -5,6 +5,7 @@ interface NavbarProps {
   user: User | null;
   onLogout: () => void;
   onLoginTrigger: () => void;
+  onEditProfileTrigger?: () => void;
   cartItems: CartItem[];
   onOpenCartCheckout: () => void;
   searchTerm: string;
@@ -14,12 +15,14 @@ interface NavbarProps {
   onViewOrderTracker: () => void;
   isOrderTrackerActive: boolean;
   pointsActive: boolean;
+  isAdminAuthorized?: boolean;
 }
 
 export default function Navbar({
   user,
   onLogout,
   onLoginTrigger,
+  onEditProfileTrigger,
   cartItems,
   onOpenCartCheckout,
   searchTerm,
@@ -29,6 +32,7 @@ export default function Navbar({
   onViewOrderTracker,
   isOrderTrackerActive,
   pointsActive,
+  isAdminAuthorized = false,
 }: NavbarProps) {
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const cartSubtotal = cartItems.reduce((acc, item) => {
@@ -111,18 +115,20 @@ export default function Navbar({
             </button>
 
             {/* Admin control button */}
-            <button
-              onClick={onToggleAdmin}
-              className={`px-2 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 border ${
-                isAdminActive
-                  ? 'bg-amber-600 text-white border-amber-650 shadow-sm'
-                  : 'bg-white/20 hover:bg-white/60 text-slate-700 border-white/30'
-              }`}
-            >
-              <Settings size={14} />
-              <span className="hidden sm:inline">Gerência</span>
-              <span className="sm:hidden">Painel</span>
-            </button>
+            {!user && (
+              <button
+                onClick={onToggleAdmin}
+                className={`px-2 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 border ${
+                  isAdminActive
+                    ? 'bg-amber-600 text-white border-amber-650 shadow-sm'
+                    : 'bg-white/20 hover:bg-white/60 text-slate-700 border-white/30'
+                }`}
+              >
+                <Settings size={14} />
+                <span className="hidden sm:inline">Gerência</span>
+                <span className="sm:hidden">Painel</span>
+              </button>
+            )}
 
             {/* User Login/Account with Loyalty stars */}
             {user ? (
@@ -130,7 +136,7 @@ export default function Navbar({
                 {/* Loyalty Balance badge */}
                 {pointsActive && (
                   <div 
-                    className="bg-yellow-400/10 text-yellow-900/90 px-2 py-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-yellow-400/30 text-[10px] sm:text-xs font-bold flex items-center gap-0.5 sm:gap-1 shadow-3xs"
+                    className="bg-yellow-400/10 text-yellow-905/90 px-2 py-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-yellow-400/30 text-[10px] sm:text-xs font-bold flex items-center gap-0.5 sm:gap-1 shadow-3xs"
                     title="Seu saldo de pontos no Clube Fidelidade"
                   >
                     <Star size={13} className="fill-yellow-500 text-yellow-500 shrink-0" />
@@ -138,18 +144,25 @@ export default function Navbar({
                   </div>
                 )}
 
-                <div className="text-right hidden xl:block">
-                  <span className="text-[10px] text-emerald-800/65 block font-bold leading-none">Olá,</span>
-                  <span className="text-xs font-bold text-gray-800 block truncate max-w-[90px]">{user.name}</span>
-                </div>
+                <button
+                  onClick={onEditProfileTrigger}
+                  className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] sm:text-xs font-bold rounded-xl transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-3xs"
+                  title="Clique para editar seu perfil e endereço"
+                  id="navbar-profile-btn"
+                >
+                  <UserIcon size={13} />
+                  <span className="hidden sm:inline">Editar Cadastro ({user.name})</span>
+                  <span className="sm:hidden">{user.name.split(' ')[0]} ✏️</span>
+                </button>
 
                 <button
                   onClick={onLogout}
-                  className="p-1.5 sm:p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50/50 rounded-full transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] sm:text-xs font-bold rounded-xl transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer"
                   title="Sair da Conta"
                   id="logout-navbar-btn"
                 >
-                  <LogOut size={15} />
+                  <LogOut size={13} />
+                  <span>Sair</span>
                 </button>
               </div>
             ) : (

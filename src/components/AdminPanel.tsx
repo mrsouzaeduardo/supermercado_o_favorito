@@ -11,9 +11,24 @@ interface AdminPanelProps {
   productsList: Product[];
   pointsActive: boolean;
   onTogglePointsActive: (active: boolean) => void;
+  pointsValue: number;
+  onUpdatePointsValue: (val: number) => void;
+  pointsDiscountType: 'total' | 'delivery';
+  onUpdatePointsDiscountType: (val: 'total' | 'delivery') => void;
+  onAdminAuthChange?: (auth: boolean) => void;
 }
 
-export default function AdminPanel({ onRefreshProducts, productsList, pointsActive, onTogglePointsActive }: AdminPanelProps) {
+export default function AdminPanel({ 
+  onRefreshProducts, 
+  productsList, 
+  pointsActive, 
+  onTogglePointsActive,
+  pointsValue,
+  onUpdatePointsValue,
+  pointsDiscountType,
+  onUpdatePointsDiscountType,
+  onAdminAuthChange,
+}: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'products' | 'delivery' | 'drivers' | 'clients' | 'deliveries'>('dashboard');
   const [dashboardSubView, setDashboardSubView] = useState<'sales' | 'inventory'>('sales');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -33,7 +48,43 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
   const [separationOrder, setSeparationOrder] = useState<Order | null>(null);
   const [searchClient, setSearchClient] = useState('');
   const [searchOrderQuery, setSearchOrderQuery] = useState('');
+  const [ordersInnerTab, setOrdersInnerTab] = useState<'today' | 'others'>('today');
+  const [searchOrderTodayQuery, setSearchOrderTodayQuery] = useState('');
+  const [searchOrderOthersQuery, setSearchOrderOthersQuery] = useState('');
   const [searchProductQuery, setSearchProductQuery] = useState('');
+  const [selectedProductCategory, setSelectedProductCategory] = useState<string>('all');
+
+  const productCategories = React.useMemo(() => {
+    const categoriesSet = new Set<string>();
+    products.forEach((p) => {
+      if (p.category) {
+        categoriesSet.add(p.category);
+      }
+    });
+    return Array.from(categoriesSet).sort();
+  }, [products]);
+
+  // Find unregistered city and neighborhood options from customers
+  const unconfiguredNeighborhoodsAndCities = React.useMemo(() => {
+    if (!clients || !deliveryConfig) return [];
+    const configuredKeys = Object.keys(deliveryConfig.neighborhoodFees).map(k => k.trim().toUpperCase());
+    const list: { neighborhood: string; city: string }[] = [];
+    const seen = new Set<string>();
+
+    clients.forEach(c => {
+      const nb = (c.neighborhood || '').trim().toUpperCase();
+      const ct = (c.city || '').trim().toUpperCase();
+      if (nb && !configuredKeys.includes(nb)) {
+        const key = `${nb}||${ct}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          list.push({ neighborhood: nb, city: ct });
+        }
+      }
+    });
+
+    return list;
+  }, [clients, deliveryConfig]);
 
   // Deliveries filter states
   const [filterDriver, setFilterDriver] = useState('');
@@ -375,6 +426,10 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
   }, []);
 
   useEffect(() => {
+    onAdminAuthChange?.(isAdminAuthorized);
+  }, [isAdminAuthorized, onAdminAuthChange]);
+
+  useEffect(() => {
     if (isAdminAuthorized) {
       loadData();
     }
@@ -642,7 +697,7 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
     if (!nbName.trim() || !nbFee.trim() || !deliveryConfig) return;
     const updatedFees = {
       ...deliveryConfig.neighborhoodFees,
-      [nbName.trim()]: Number(nbFee)
+      [nbName.trim().toUpperCase()]: Number(nbFee)
     };
     const newConfig = { ...deliveryConfig, neighborhoodFees: updatedFees };
     db.saveDeliveryConfig(newConfig);
@@ -1901,50 +1956,156 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
 
           {/* ORDERS TAB */}
           {activeTab === 'orders' && (() => {
-            const filteredOrders = orders.filter((order) => {
-              if (!searchOrderQuery.trim()) return true;
-              const query = searchOrderQuery.toLowerCase();
+            const isToday = (dateStr: string) => {
+              if (!dateStr) return false;
+              try {
+                const d = new Date(dateStr);
+                const today = new Date();
+                return (
+                  d.getDate() === today.getDate() &&
+                  d.getMonth() === today.getMonth() &&
+                  d.getFullYear() === today.getFullYear()
+                );
+              } catch (e) {
+                return false;
+              }
+            };
+
+            const todayOrders = orders.filter(o => isToday(o.createdAt));
+            const otherOrders = orders.filter(o => !isToday(o.createdAt));
+
+            const activeList = ordersInnerTab === 'today' ? todayOrders : otherOrders;
+            const activeSearchQuery = ordersInnerTab === 'today' ? searchOrderTodayQuery : searchOrderOthersQuery;
+            const setActiveSearchQuery = ordersInnerTab === 'today' ? setSearchOrderTodayQuery : setSearchOrderOthersQuery;
+
+            const filteredOrders = activeList.filter((order) => {
+              if (!activeSearchQuery.trim()) return true;
+              const query = activeSearchQuery.toLowerCase();
               return (
                 order.id.toLowerCase().includes(query) ||
-                (order.userContact && order.userContact.toLowerCase().includes(query))
+                (order.userContact && order.userContact.toLowerCase().includes(query)) ||
+                (order.address && order.address.toLowerCase().includes(query)) ||
+                (order.neighborhood && order.neighborhood.toLowerCase().includes(query)) ||
+                (order.city && order.city.toLowerCase().includes(query))
               );
             });
 
             return (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-fadeIn">
+                {/* Header and Refresh button */}
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-                  <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Acompanhar Pedidos</h3>
-                  
-                  <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-                    <div className="relative flex-1 sm:w-64">
-                      <input
-                        type="text"
-                        placeholder="Buscar por Nº Pedido ou Cliente..."
-                        value={searchOrderQuery}
-                        onChange={(e) => setSearchOrderQuery(e.target.value)}
-                        className="w-full px-3 py-1.5 pl-8 bg-white border border-gray-250 rounded-lg focus:outline-hidden text-xs text-slate-800 font-medium placeholder-gray-400"
-                        id="order-search-filter-input"
-                      />
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
-                    </div>
+                  <div>
+                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                      <Receipt size={16} className="text-emerald-700" />
+                      Acompanhamento de Pedidos
+                    </h3>
+                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mt-0.5">
+                      Gerencie e altere o status das entregas em tempo real
+                    </p>
+                  </div>
 
+                  <button
+                    onClick={loadData}
+                    className="p-1.5 px-3 border border-emerald-250 bg-emerald-50/10 hover:bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ml-auto sm:ml-0"
+                    id="refresh-orders-btn"
+                  >
+                    <RefreshCw size={12} className="text-emerald-700" />
+                    <span>Atualizar Lista</span>
+                  </button>
+                </div>
+
+                {/* Sub Tab Buttons and Search Field */}
+                <div className="bg-gray-50 p-2 border border-gray-150 rounded-2xl flex flex-col md:flex-row md:items-center gap-3 justify-between">
+                  {/* Selectors for Hoje vs Demais */}
+                  <div className="flex gap-1 bg-gray-200/60 p-1 rounded-xl w-fit">
                     <button
-                      onClick={loadData}
-                      className="p-1.5 px-3 border border-gray-250 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:shadow-xs transition-all cursor-pointer shrink-0"
+                      type="button"
+                      onClick={() => setOrdersInnerTab('today')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+                        ordersInnerTab === 'today'
+                          ? 'bg-white text-emerald-900 shadow-xs scale-102 font-black'
+                          : 'text-gray-500 hover:text-gray-850'
+                      }`}
+                      id="orders-tab-today"
                     >
-                      <RefreshCw size={12} />
-                      <span className="hidden sm:inline">Atualizar Lista</span>
+                      <Clock size={12} className={ordersInnerTab === 'today' ? 'text-emerald-700' : 'text-gray-400'} />
+                      <span>Pedidos de Hoje</span>
+                      <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold ${
+                        ordersInnerTab === 'today'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-gray-300 text-gray-600'
+                      }`}>
+                        {todayOrders.length}
+                      </span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrdersInnerTab('others')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+                        ordersInnerTab === 'others'
+                          ? 'bg-white text-emerald-900 shadow-xs scale-102 font-black'
+                          : 'text-gray-500 hover:text-gray-850'
+                      }`}
+                      id="orders-tab-others"
+                    >
+                      <Calendar size={12} className={ordersInnerTab === 'others' ? 'text-emerald-700' : 'text-gray-400'} />
+                      <span>Demais Pedidos</span>
+                      <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-extrabold ${
+                        ordersInnerTab === 'others'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-gray-300 text-gray-600'
+                      }`}>
+                        {otherOrders.length}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Active Tab's Search Input */}
+                  <div className="relative w-full md:w-72 shrink-0">
+                    <input
+                      type="text"
+                      placeholder={
+                        ordersInnerTab === 'today'
+                          ? "Buscar pedidos de hoje..."
+                          : "Buscar demais pedidos..."
+                      }
+                      value={activeSearchQuery}
+                      onChange={(e) => setActiveSearchQuery(e.target.value)}
+                      className="w-full px-3 py-1.5 pl-8 bg-white border border-gray-250 rounded-xl focus:outline-hidden text-xs text-slate-800 font-bold placeholder-gray-400 focus:ring-2 focus:ring-emerald-500/20"
+                      id={`order-search-filter-${ordersInnerTab}`}
+                    />
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                    {activeSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-650 font-bold text-xs cursor-pointer p-0.5"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 {orders.length === 0 ? (
-                  <div className="text-center p-12 bg-gray-50 rounded-xl text-xs text-gray-400">
-                    Nenhum pedido efetuado até o momento. Faça uma compra para simular o workflow do gerente!
+                  <div className="text-center p-12 bg-white border border-gray-150 rounded-2xl text-xs text-gray-400 flex flex-col items-center justify-center gap-2">
+                    <span className="text-lg">📦</span>
+                    <p className="font-bold uppercase tracking-wider text-[10px] text-gray-500">
+                      Nenhum pedido efetuado até o momento. Faça uma compra para simular o recebimento!
+                    </p>
+                  </div>
+                ) : activeList.length === 0 ? (
+                  <div className="text-center p-12 bg-white border border-gray-150 rounded-2xl text-xs text-gray-400 flex flex-col items-center justify-center gap-2">
+                    <span className="text-sm">🗓️</span>
+                    <p className="font-bold uppercase tracking-wider text-[10px] text-gray-500">
+                      {ordersInnerTab === 'today'
+                        ? 'Nenhum pedido recebido hoje.'
+                        : 'Nenhum outro pedido registrado.'}
+                    </p>
                   </div>
                 ) : filteredOrders.length === 0 ? (
-                  <div className="text-center p-12 bg-gray-55 rounded-xl text-xs text-gray-400" id="no-orders-search-result">
-                    Nenhum pedido encontrado para o termo de busca "{searchOrderQuery}".
+                  <div className="text-center p-12 bg-white border border-gray-150 rounded-2xl text-xs text-gray-400" id="no-orders-search-result">
+                    Nenhum pedido encontrado para o termo de busca "{activeSearchQuery}".
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -2322,23 +2483,48 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                   <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Produtos Ativos</h4>
                   
-                  {/* Search products filter */}
-                  <div className="relative w-full sm:w-56 shrink-0">
-                    <input
-                      type="text"
-                      placeholder="Buscar produto por nome ou setor..."
-                      value={searchProductQuery}
-                      onChange={(e) => setSearchProductQuery(e.target.value)}
-                      className="w-full px-2.5 py-1.5 pl-8 bg-white border border-gray-250 rounded-lg focus:outline-hidden text-xs text-slate-800 font-medium placeholder-gray-400"
-                      id="product-search-filter-input"
-                    />
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                    {/* Category Filter */}
+                    <div className="w-full sm:w-auto shrink-0">
+                      <select
+                        value={selectedProductCategory}
+                        onChange={(e) => setSelectedProductCategory(e.target.value)}
+                        className="w-full sm:w-auto px-2.5 py-1.5 bg-white border border-gray-250 rounded-lg text-xs font-bold text-gray-700 focus:outline-hidden cursor-pointer"
+                        id="product-category-filter-select"
+                      >
+                        <option value="all">Setor: Todos ({products.length})</option>
+                        {productCategories.map((cat) => {
+                          const count = products.filter(p => p.category === cat).length;
+                          return (
+                            <option key={cat} value={cat}>
+                              {cat} ({count})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    {/* Search products filter */}
+                    <div className="relative w-full sm:w-56 shrink-0">
+                      <input
+                        type="text"
+                        placeholder="Buscar produto por nome ou setor..."
+                        value={searchProductQuery}
+                        onChange={(e) => setSearchProductQuery(e.target.value)}
+                        className="w-full px-2.5 py-1.5 pl-8 bg-white border border-gray-250 rounded-lg focus:outline-hidden text-xs text-slate-800 font-medium placeholder-gray-400"
+                        id="product-search-filter-input"
+                      />
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                    </div>
                   </div>
                 </div>
                 
                 <div className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1">
                   {(() => {
                     const filteredProd = products.filter((p) => {
+                      if (selectedProductCategory !== 'all') {
+                        if (p.category !== selectedProductCategory) return false;
+                      }
                       if (!searchProductQuery.trim()) return true;
                       const q = searchProductQuery.toLowerCase();
                       return (
@@ -2514,6 +2700,42 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
                     Taxas Específicas por Bairro
                   </h4>
 
+                  {unconfiguredNeighborhoodsAndCities.length > 0 && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider block">
+                          💡 Novos Bairros dos Clientes (Sem Frete Definido)
+                        </span>
+                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[9px] font-bold">
+                          {unconfiguredNeighborhoodsAndCities.length} pendente(s)
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-amber-900 leading-tight">
+                        Clique abaixo para preencher o bairro e focar o campo de valor para configuração rápida:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 max-h-[110px] overflow-y-auto pr-1">
+                        {unconfiguredNeighborhoodsAndCities.map((item) => (
+                          <button
+                            key={`${item.neighborhood}-${item.city}`}
+                            type="button"
+                            onClick={() => {
+                              setNbName(item.neighborhood);
+                              const feeInput = document.getElementById("new-nb-fee-input");
+                              if (feeInput) {
+                                (feeInput as HTMLInputElement).focus();
+                              }
+                            }}
+                            className="px-2 py-0.5 text-[9px] font-bold bg-white border border-amber-250 text-amber-900 rounded-md hover:bg-amber-100 transition-colors cursor-pointer flex items-center gap-1 shadow-3xs"
+                            title={`Cidade: ${item.city}. Clique para configurar`}
+                          >
+                            <span>{item.neighborhood} ({item.city})</span>
+                            <Plus size={8} className="text-amber-700" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Form to insert neighborhood rate */}
                   <div className="grid grid-cols-2 gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
                     <div className="space-y-1">
@@ -2522,7 +2744,7 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
                         type="text"
                         placeholder="Ex: Centro"
                         value={nbName || ''}
-                        onChange={(e) => setNbName(e.target.value)}
+                        onChange={(e) => setNbName(e.target.value.toUpperCase())}
                         className="w-full px-2.5 py-1.5 bg-white border border-gray-250 rounded-lg text-xs"
                       />
                     </div>
@@ -2535,6 +2757,7 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
                           value={nbFee || ''}
                           onChange={(e) => setNbFee(e.target.value)}
                           className="w-full px-2 py-1.5 bg-white border border-gray-250 rounded-lg text-xs"
+                          id="new-nb-fee-input"
                         />
                         <button
                           type="button"
@@ -2607,6 +2830,68 @@ export default function AdminPanel({ onRefreshProducts, productsList, pointsActi
                     <div className="w-10 h-6 bg-gray-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
                   </label>
                 </div>
+
+                {/* Extra points options when active */}
+                {pointsActive && (
+                  <div className="pt-4 border-t border-amber-200/50 space-y-3.5">
+                    <h5 className="text-[11px] font-black text-amber-950 uppercase tracking-widest">Ajustes de Conversão e Regras do Desconto</h5>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Points Cash Value */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-amber-900 block">
+                          Quanto vale cada Ponto (R$)
+                        </label>
+                        <div className="relative rounded-lg shadow-3xs max-w-[180px]">
+                          <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                            <span className="text-xs font-black text-gray-500">R$</span>
+                          </div>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={pointsValue}
+                            onChange={(e) => onUpdatePointsValue(parseFloat(e.target.value) || 0.1)}
+                            className="w-full pl-8 pr-3 py-1.5 bg-white border border-gray-250 rounded-lg text-xs font-bold text-gray-800 focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                            placeholder="0,10"
+                          />
+                        </div>
+                        <span className="text-[10px] text-amber-800/80 block leading-tight mt-1">
+                          Exemplo: R$ 0,10 significa que 10 pontos equivalem a R$ 1,00 de desconto. (Atualmente: 100 pontos = R$ {(100 * pointsValue).toFixed(2).replace('.', ',')})
+                        </span>
+                      </div>
+
+                      {/* Points Applicability Type */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-amber-900 block mb-1">
+                          Tipo de Desconto Permitido
+                        </label>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-extrabold text-gray-700 hover:text-amber-950 transition-colors">
+                            <input
+                              type="radio"
+                              name="pointsDiscountType"
+                              checked={pointsDiscountType === 'total'}
+                              onChange={() => onUpdatePointsDiscountType('total')}
+                              className="text-amber-500 focus:ring-amber-500 cursor-pointer"
+                            />
+                            <span>Desconto na Compra Total (Produtos + Frete)</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-extrabold text-gray-700 hover:text-amber-950 transition-colors">
+                            <input
+                              type="radio"
+                              name="pointsDiscountType"
+                              checked={pointsDiscountType === 'delivery'}
+                              onChange={() => onUpdatePointsDiscountType('delivery')}
+                              className="text-amber-500 focus:ring-amber-500 cursor-pointer"
+                            />
+                            <span>Desconto Apenas no Frete (Taxa de entrega)</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

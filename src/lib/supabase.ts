@@ -45,16 +45,29 @@ export function getDbMode() {
 const LOCAL_STORAGE_PREFIX = 'O_FAVORITO_DB_';
 
 function getLocalData<T>(key: string, defaultValue: T): T {
-  const data = localStorage.getItem(LOCAL_STORAGE_PREFIX + key);
-  if (!data) {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(defaultValue));
+  try {
+    if (typeof localStorage === 'undefined') {
+      return defaultValue;
+    }
+    const data = localStorage.getItem(LOCAL_STORAGE_PREFIX + key);
+    if (!data) {
+      localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(defaultValue));
+      return defaultValue;
+    }
+    return JSON.parse(data);
+  } catch (e) {
     return defaultValue;
   }
-  return JSON.parse(data);
 }
 
 function setLocalData<T>(key: string, value: T): void {
-  localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(value));
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(value));
+    }
+  } catch (e) {
+    // ignore
+  }
 }
 
 // Database APIs with automatic fallback
@@ -320,7 +333,7 @@ export const db = {
           // Register user
           const newUserPayload = {
             id: 'u_' + Math.random().toString(36).substr(2, 9),
-            name: name || 'Cliente O Favorito',
+            name: (name || 'Cliente O Favorito').trim().toUpperCase(),
             points: 10, // 10 welcome points!
             created_at: new Date().toISOString(),
             email: isEmail ? cleanContact : null,
@@ -363,7 +376,7 @@ export const db = {
     if (!user) {
       user = {
         id: 'u_' + Math.random().toString(36).substr(2, 9),
-        name: name || 'Cliente O Favorito',
+        name: (name || 'Cliente O Favorito').trim().toUpperCase(),
         points: 10, // 10 points bonus on sign up
         email: isEmail ? cleanContact : undefined,
         whatsapp: !isEmail ? cleanContact : undefined,
@@ -545,19 +558,24 @@ export const db = {
     streetNumber?: string;
     password?: string;
   }): Promise<User> {
+    const uppercaseName = (client.name || 'Cliente O Favorito').trim().toUpperCase();
+    const uppercaseCity = (client.city || '').trim().toUpperCase();
+    const uppercaseNeighborhood = (client.neighborhood || '').trim().toUpperCase();
+    const uppercaseStreet = (client.streetNumber || '').trim().toUpperCase();
+
     if (supabase) {
       try {
         const newUserPayload = {
           id: 'u_' + Math.random().toString(36).substr(2, 9),
-          name: client.name || 'Cliente O Favorito',
+          name: uppercaseName,
           points: 10,
           created_at: new Date().toISOString(),
           email: client.email ? client.email.trim().toLowerCase() : null,
           whatsapp: client.whatsapp ? client.whatsapp.trim() : null,
           password: client.password || null,
-          city: client.city || null,
-          neighborhood: client.neighborhood || null,
-          street_number: client.streetNumber || null,
+          city: uppercaseCity || null,
+          neighborhood: uppercaseNeighborhood || null,
+          street_number: uppercaseStreet || null,
         };
 
         const { error: insertError } = await supabase
@@ -588,14 +606,14 @@ export const db = {
     const users = getLocalData<any[]>('users', []);
     const newUser = {
       id: 'u_' + Math.random().toString(36).substr(2, 9),
-      name: client.name || 'Cliente O Favorito',
+      name: uppercaseName,
       points: 10,
       email: client.email || '',
       whatsapp: client.whatsapp || '',
       password: client.password || null,
-      city: client.city || '',
-      neighborhood: client.neighborhood || '',
-      streetNumber: client.streetNumber || '',
+      city: uppercaseCity,
+      neighborhood: uppercaseNeighborhood,
+      streetNumber: uppercaseStreet,
       createdAt: new Date().toISOString(),
     };
     users.push(newUser);
@@ -610,6 +628,81 @@ export const db = {
       city: newUser.city,
       neighborhood: newUser.neighborhood,
       streetNumber: newUser.streetNumber,
+    };
+  },
+
+  async updateClientProfile(userId: string, updates: {
+    name: string;
+    email?: string;
+    whatsapp?: string;
+    city?: string;
+    neighborhood?: string;
+    streetNumber?: string;
+  }): Promise<User> {
+    const uppercaseName = (updates.name || '').trim().toUpperCase();
+    const uppercaseCity = (updates.city || '').trim().toUpperCase();
+    const uppercaseNeighborhood = (updates.neighborhood || '').trim().toUpperCase();
+    const uppercaseStreet = (updates.streetNumber || '').trim().toUpperCase();
+
+    if (supabase) {
+      try {
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            name: uppercaseName,
+            email: updates.email ? updates.email.trim().toLowerCase() : null,
+            whatsapp: updates.whatsapp ? updates.whatsapp.trim() : null,
+            city: uppercaseCity || null,
+            neighborhood: uppercaseNeighborhood || null,
+            street_number: uppercaseStreet || null,
+          })
+          .eq('id', userId);
+
+        if (updateError) {
+          throw new Error('UPDATE_FAILED: ' + updateError.message);
+        }
+      } catch (err) {
+        console.error('Supabase client update error, using fallback:', err);
+      }
+    }
+
+    const users = getLocalData<any[]>('users', []);
+    const idx = users.findIndex(u => u.id === userId);
+    if (idx !== -1) {
+      users[idx] = {
+        ...users[idx],
+        name: uppercaseName,
+        email: updates.email || '',
+        whatsapp: updates.whatsapp || '',
+        city: uppercaseCity,
+        neighborhood: uppercaseNeighborhood,
+        streetNumber: uppercaseStreet,
+      };
+      setLocalData('users', users);
+    }
+
+    const updated = users.find(u => u.id === userId) || {
+      id: userId,
+      name: uppercaseName,
+      email: updates.email || '',
+      whatsapp: updates.whatsapp || '',
+      points: 0,
+      createdAt: new Date().toISOString(),
+      city: uppercaseCity,
+      neighborhood: uppercaseNeighborhood,
+      streetNumber: uppercaseStreet,
+    };
+
+    return {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email || '',
+      whatsapp: updated.whatsapp || '',
+      points: Number(updated.points || 0),
+      createdAt: updated.createdAt || updated.created_at || new Date().toISOString(),
+      city: updated.city || '',
+      neighborhood: updated.neighborhood || '',
+      streetNumber: updated.streetNumber || updated.street_number || '',
     };
   },
 

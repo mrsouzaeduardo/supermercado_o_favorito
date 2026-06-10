@@ -4,8 +4,10 @@ import PromotionCarousel from './components/PromotionCarousel';
 import ProductCard from './components/ProductCard';
 import CheckoutModal from './components/CheckoutModal';
 import AuthModal from './components/AuthModal';
+import ProfileModal from './components/ProfileModal';
 import OrderTracker from './components/OrderTracker';
 import AdminPanel from './components/AdminPanel';
+import TermsModal from './components/TermsModal';
 import { db } from './lib/supabase';
 import { Product, CartItem, User, Order } from './types';
 import { CATEGORIES } from './data/mockProducts';
@@ -25,9 +27,18 @@ export default function App() {
   // Authenticated User
   const [user, setUser] = useState<User | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isTermsOpen, setIsTermsOpen] = useState(false);
 
   // Toggles for different views
   const [isAdminActive, setIsAdminActive] = useState(false);
+  const [isAdminAuthorized, setIsAdminAuthorized] = useState<boolean>(() => {
+    try {
+      return !!sessionStorage.getItem('O_FAVORITO_ADMIN_LOGGED');
+    } catch {
+      return false;
+    }
+  });
   const [isOrderTrackerActive, setIsOrderTrackerActive] = useState(false);
 
   // Last order submitted (automatically loaded to OrderTracker)
@@ -37,6 +48,16 @@ export default function App() {
   const [pointsActive, setPointsActive] = useState<boolean>(() => {
     const saved = localStorage.getItem('O_FAVORITO_POINTS_ACTIVE');
     return saved !== 'false'; // default is true
+  });
+
+  const [pointsValue, setPointsValue] = useState<number>(() => {
+    const saved = localStorage.getItem('O_FAVORITO_POINTS_VALUE');
+    return saved ? parseFloat(saved) : 0.10; // default to 0.10 (meaning 1 point = R$ 0.10)
+  });
+
+  const [pointsDiscountType, setPointsDiscountType] = useState<'total' | 'delivery'>(() => {
+    const saved = localStorage.getItem('O_FAVORITO_POINTS_DISCOUNT_TYPE');
+    return saved === 'delivery' ? 'delivery' : 'total'; // default to total
   });
 
   // Initialize and load persistent data
@@ -181,6 +202,9 @@ export default function App() {
   const handleLoginSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
     localStorage.setItem('O_FAVORITO_LOGGED_USER', JSON.stringify(loggedInUser));
+    setIsAdminActive(false);
+    setIsAdminAuthorized(false);
+    sessionStorage.removeItem('O_FAVORITO_ADMIN_LOGGED');
   };
 
   const handleLogout = () => {
@@ -241,6 +265,7 @@ export default function App() {
         user={user}
         onLogout={handleLogout}
         onLoginTrigger={() => setIsAuthOpen(true)}
+        onEditProfileTrigger={() => setIsProfileOpen(true)}
         cartItems={cartItems}
         onOpenCartCheckout={() => setIsCheckoutOpen(true)}
         searchTerm={searchTerm}
@@ -251,6 +276,7 @@ export default function App() {
           if (isOrderTrackerActive) setIsOrderTrackerActive(false);
         }}
         onToggleAdmin={() => {
+          if (user) return; // Forbid opening admin if logged in as client
           setIsAdminActive(!isAdminActive);
           setIsOrderTrackerActive(false);
         }}
@@ -261,13 +287,14 @@ export default function App() {
         }}
         isOrderTrackerActive={isOrderTrackerActive}
         pointsActive={pointsActive}
+        isAdminAuthorized={isAdminAuthorized}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-20 sm:pb-6 space-y-6 sm:space-y-8">
         
         {/* VIEW 1: ADMIN PANEL */}
-        {isAdminActive ? (
+        {isAdminActive && !user ? (
           <div className="space-y-4 animate-fadeIn">
             <div className="flex justify-between items-center bg-amber-50 p-3 rounded-xl border border-amber-200">
               <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5 leading-none">
@@ -281,7 +308,7 @@ export default function App() {
                 Voltar à Loja
               </button>
             </div>
-            <AdminPanel 
+             <AdminPanel 
               productsList={products} 
               onRefreshProducts={loadProducts} 
               pointsActive={pointsActive}
@@ -289,6 +316,17 @@ export default function App() {
                 setPointsActive(val);
                 localStorage.setItem('O_FAVORITO_POINTS_ACTIVE', String(val));
               }}
+              pointsValue={pointsValue}
+              onUpdatePointsValue={(val) => {
+                setPointsValue(val);
+                localStorage.setItem('O_FAVORITO_POINTS_VALUE', String(val));
+              }}
+              pointsDiscountType={pointsDiscountType}
+              onUpdatePointsDiscountType={(val) => {
+                setPointsDiscountType(val);
+                localStorage.setItem('O_FAVORITO_POINTS_DISCOUNT_TYPE', val);
+              }}
+              onAdminAuthChange={setIsAdminAuthorized}
             />
           </div>
         ) 
@@ -433,6 +471,7 @@ export default function App() {
                         cartQuantity={qty}
                         onAdd={handleAddToCart}
                         onRemove={handleRemoveFromCart}
+                        pointsActive={pointsActive}
                       />
                     );
                   })}
@@ -560,7 +599,12 @@ export default function App() {
               Desenvolvido por <span className="text-white hover:text-green-300 transition-colors">Vitta Systems</span>
             </div>
             <div className="flex gap-4">
-              <span className="hover:text-emerald-300 cursor-pointer">Termos de Uso</span>
+              <button
+                onClick={() => setIsTermsOpen(true)}
+                className="hover:text-emerald-300 cursor-pointer bg-transparent border-none p-0 font-semibold focus:outline-hidden text-xs"
+              >
+                Termos de Uso
+              </button>
               <span className="hover:text-emerald-300 cursor-pointer">Segurança dos Dados</span>
             </div>
           </div>
@@ -592,6 +636,9 @@ export default function App() {
         onUpdateCartQty={handleUpdateCartQty}
         onClearCart={handleClearCart}
         pointsActive={pointsActive}
+        pointsValue={pointsValue}
+        pointsDiscountType={pointsDiscountType}
+        onEditProfileTrigger={() => setIsProfileOpen(true)}
       />
 
       {/* Auth Login Modal */}
@@ -600,6 +647,25 @@ export default function App() {
         onClose={() => setIsAuthOpen(false)}
         onLoginSuccess={handleLoginSuccess}
         pointsActive={pointsActive}
+        onOpenTerms={() => setIsTermsOpen(true)}
+      />
+
+      {/* Terms of Use Modal */}
+      <TermsModal
+        isOpen={isTermsOpen}
+        onClose={() => setIsTermsOpen(false)}
+      />
+
+      {/* Profile Edit Modal */}
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
+        onUpdateSuccess={(updatedUser) => {
+          setUser(updatedUser);
+          localStorage.setItem('O_FAVORITO_LOGGED_USER', JSON.stringify(updatedUser));
+        }}
+        onLogout={handleLogout}
       />
 
       </div>

@@ -9,9 +9,10 @@ interface ProductCardProps {
   onAdd: (product: Product) => void;
   onRemove: (productId: string) => void;
   userPointsEarned?: boolean;
+  pointsActive?: boolean;
 }
 
-export default function ProductCard({ product, cartQuantity, onAdd, onRemove }: ProductCardProps) {
+export default function ProductCard({ product, cartQuantity, onAdd, onRemove, pointsActive = true }: ProductCardProps) {
   const displayPrice = product.promoPrice && product.isPromo ? product.promoPrice : product.price;
   const originalPrice = product.price;
   const hasPromo = product.isPromo && product.promoPrice;
@@ -44,10 +45,12 @@ export default function ProductCard({ product, cartQuantity, onAdd, onRemove }: 
         )}
 
         {/* Loyalty Points Badge */}
-        <div className="absolute top-2 right-2 bg-emerald-700/90 text-white rounded-lg px-1.5 py-0.5 sm:px-2 sm:py-1 text-[10px] sm:text-[11px] font-bold flex items-center gap-1 backdrop-blur-xs min-h-[20px] sm:min-h-[22px] shadow-sm">
-          <Star size={10} className="fill-yellow-300 text-yellow-300 shrink-0" />
-          <span>+{product.pointsAwarded} pts</span>
-        </div>
+        {pointsActive && (
+          <div className="absolute top-2 right-2 bg-emerald-700/90 text-white rounded-lg px-1.5 py-0.5 sm:px-2 sm:py-1 text-[10px] sm:text-[11px] font-bold flex items-center gap-1 backdrop-blur-xs min-h-[20px] sm:min-h-[22px] shadow-sm">
+            <Star size={10} className="fill-yellow-300 text-yellow-300 shrink-0" />
+            <span>+{product.pointsAwarded} pts</span>
+          </div>
+        )}
       </div>
 
       {/* Product Information */}
