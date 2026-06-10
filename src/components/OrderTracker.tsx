@@ -16,6 +16,7 @@ export default function OrderTracker({ user, activeOrder: initialActiveOrder, po
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [isConfirming, setIsConfirming] = useState(false);
 
   // Sincronizar com order ativo recém criado
   useEffect(() => {
@@ -74,6 +75,34 @@ export default function OrderTracker({ user, activeOrder: initialActiveOrder, po
       setMessage('Erro ao pesquisar pedido. Tente novamente.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirmReceipt = async (orderId: string) => {
+    if (isConfirming || !selectedOrder) return;
+    setIsConfirming(true);
+    try {
+      await db.updateOrderStatus(orderId, 'delivered', 'Pedido recebido e confirmado pelo cliente na plataforma via QR Code!');
+      
+      const updatedOrder: Order = {
+        ...selectedOrder,
+        status: 'delivered',
+        trackingHistory: [
+          ...selectedOrder.trackingHistory,
+          {
+            status: 'delivered',
+            timestamp: new Date().toISOString(),
+            description: 'Pedido recebido e confirmado pelo cliente na plataforma via QR Code!'
+          }
+        ]
+      };
+      
+      setSelectedOrder(updatedOrder);
+      setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+    } catch (e) {
+      console.error('Erro ao confirmar recebimento:', e);
+    } finally {
+      setIsConfirming(false);
     }
   };
 
@@ -229,6 +258,85 @@ export default function OrderTracker({ user, activeOrder: initialActiveOrder, po
                 </div>
               )}
             </div>
+
+            {/* Dynamic Tracking QR Code Integration Actions */}
+            {(() => {
+              const fullAddressStr = `${selectedOrder.address}, ${selectedOrder.number}, ${selectedOrder.neighborhood}, ${selectedOrder.city}`;
+              const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddressStr)}`;
+              const wazeUrl = `https://waze.com/ul?q=${encodeURIComponent(fullAddressStr)}`;
+              return (
+                <div className="bg-emerald-50/40 border border-emerald-150 p-4.5 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                  {/* Left Column: Driver routing */}
+                  <div className="space-y-1.5">
+                    <span className="text-[9px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md uppercase tracking-wider inline-block">
+                      🛵 Painel de Rota (Entregador)
+                    </span>
+                    <p className="text-[11.5px] font-bold text-slate-800 leading-tight">
+                      Abra a rota em tempo real usando o GPS do celular:
+                    </p>
+                    <div className="flex gap-2 pt-1">
+                      <a
+                        href={googleMapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold px-3 py-2 rounded-xl text-xs text-center transition-colors flex items-center justify-center gap-1.5 shadow-3xs"
+                      >
+                        🗺️ Google Maps
+                      </a>
+                      <a
+                        href={wazeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-extrabold px-3 py-2 rounded-xl text-xs text-center transition-colors flex items-center justify-center gap-1.5 shadow-3xs"
+                      >
+                        🚗 Waze GPS
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Customer secure validation */}
+                  <div className="border-t md:border-t-0 md:border-l border-dashed border-emerald-200 pt-3 md:pt-0 md:pl-5 space-y-2">
+                    <span className="text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-100 px-2.5 py-0.5 rounded-md uppercase tracking-wider inline-block">
+                      🔒 Confirmação de Recebimento (Cliente)
+                    </span>
+                    {selectedOrder.status === 'delivered' ? (
+                      <div className="flex items-start gap-2.5 text-emerald-900 font-extrabold text-xs bg-white border border-emerald-200 p-3 rounded-xl shadow-3xs">
+                        <span className="text-lg leading-none shrink-0">✔️</span>
+                        <div className="leading-snug">
+                          <p>Entrega Confirmada com Sucesso!</p>
+                          <p className="text-[10px] text-gray-400 font-medium mt-0.5 font-sans">
+                            Assinado e confirmado com segurança diretamente via QR Code na plataforma.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-[10.5px] text-gray-550 font-semibold leading-relaxed">
+                          Recebeu as suas sacolas? Clique abaixo para validar a sua entrega instantaneamente:
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmReceipt(selectedOrder.id)}
+                          disabled={isConfirming}
+                          className="w-full bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-black px-4.5 py-2.5 rounded-xl text-xs cursor-pointer shadow-3xs transition-all flex items-center justify-center gap-1.5"
+                        >
+                          {isConfirming ? (
+                            <>
+                              <RefreshCw className="animate-spin" size={13} />
+                              Confirmando...
+                            </>
+                          ) : (
+                            <>
+                              Confirmar meu Recebimento ✔️
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Micro Stepper Line */}
             <div className="py-2.5">

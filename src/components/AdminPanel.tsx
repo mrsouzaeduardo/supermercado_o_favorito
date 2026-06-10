@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Plus, RefreshCw, Star, Trash2, Edit, Save, Tag, DollarSign, Truck, Database, AlertCircle, CheckCircle, HelpCircle, Eye, EyeOff, Users, TrendingUp, TrendingDown, BarChart3, Activity, ArrowUpRight, Award, Receipt, PiggyBank, Clock, Calendar } from 'lucide-react';
+import { Settings, Plus, RefreshCw, Star, Trash2, Edit, Save, Tag, DollarSign, Truck, Database, AlertCircle, CheckCircle, HelpCircle, Eye, EyeOff, Users, TrendingUp, TrendingDown, BarChart3, Activity, ArrowUpRight, Award, Receipt, PiggyBank, Clock, Calendar, MapPin, Map, X, ArrowUp, ArrowDown, Compass, Printer, Play } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Legend, Cell } from 'recharts';
 import { db, supabase, getDbMode, SUPABASE_SQL_SCHEMA } from '../lib/supabase';
 import { Order, Product, DeliveryConfig, DeliveryDriver, User, Delivery, StockMovement } from '../types';
@@ -29,11 +29,220 @@ export default function AdminPanel({
   onUpdatePointsDiscountType,
   onAdminAuthChange,
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'products' | 'delivery' | 'drivers' | 'clients' | 'deliveries'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'products' | 'delivery' | 'drivers' | 'clients' | 'deliveries' | 'routing'>('dashboard');
   const [dashboardSubView, setDashboardSubView] = useState<'sales' | 'inventory'>('sales');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+
+  // Intelligent delivery routing states
+  const [selectedRoutingOrderIds, setSelectedRoutingOrderIds] = useState<string[]>([]);
+  const [assignedRoutingDriverId, setAssignedRoutingDriverId] = useState<string>('');
+  const [optimizedRoute, setOptimizedRoute] = useState<any[]>([]);
+  const [routeStats, setRouteStats] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+  const [isRoutingLoading, setIsRoutingLoading] = useState(false);
+  const [activeHoverStopIdx, setActiveHoverStopIdx] = useState<number | null>(null);
+  const [isRoutePrintMode, setIsRoutePrintMode] = useState(false);
+
+  // Geographic coordinates simulation for neighborhoods in Natal/RN region around "O Favorito" (Center)
+  const NEIGHBORHOOD_COORDS: Record<string, { x: number; y: number }> = {
+    'PONTA NEGRA': { x: 28, y: 78 },
+    'CAPIM MACIO': { x: 38, y: 64 },
+    'NEÓPOLIS': { x: 62, y: 72 },
+    'CANDELÁRIA': { x: 52, y: 44 },
+    'TIROL': { x: 45, y: 18 },
+    'LAGOA NOVA': { x: 48, y: 32 },
+    'PETRÓPOLIS': { x: 41, y: 10 },
+    'CIDADE JARDIM': { x: 55, y: 58 },
+    'ALECRIM': { x: 38, y: 26 },
+    'ROCAS': { x: 42, y: 8 },
+    'COHABINAL': { x: 74, y: 84 },
+    'RECREIO': { x: 68, y: 88 },
+  };
+
+  const getNeighborhoodCoords = (name: string) => {
+    const cleaned = (name || '').trim().toUpperCase();
+    if (NEIGHBORHOOD_COORDS[cleaned]) {
+      return NEIGHBORHOOD_COORDS[cleaned];
+    }
+    // Deterministic random point generator using character hashes so neighborhoods map to same node placements
+    let hash = 0;
+    for (let i = 0; i < cleaned.length; i++) {
+      hash = cleaned.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const angle = (Math.abs(hash) % 360) * (Math.PI / 180);
+    const radius = 15 + (Math.abs(hash >> 3) % 32);
+    const x = Math.round(50 + Math.cos(angle) * radius);
+    const y = Math.round(50 + Math.sin(angle) * radius);
+    return { x: Math.max(12, Math.min(88, x)), y: Math.max(12, Math.min(88, y)) };
+  };
+
+  const handleOptimizeRoute = (customSelectedIds?: string[]) => {
+    const targetIds = customSelectedIds || selectedRoutingOrderIds;
+    if (targetIds.length === 0) {
+      setOptimizedRoute([]);
+      setRouteStats(null);
+      return;
+    }
+
+    const unvisitedOrders = orders.filter(o => targetIds.includes(o.id));
+    if (unvisitedOrders.length === 0) return;
+
+    let currentPoint = { x: 50, y: 50 }; // Store center coordinates
+    const route: any[] = [];
+    let totalDistanceKm = 0;
+
+    const unvisited = [...unvisitedOrders];
+
+    while (unvisited.length > 0) {
+      let bestIndex = 0;
+      let minDistanceUnits = Infinity;
+      let bestCoords = { x: 50, y: 50 };
+
+      for (let i = 0; i < unvisited.length; i++) {
+        const order = unvisited[i];
+        const coords = getNeighborhoodCoords(order.neighborhood);
+        const dist = Math.sqrt(Math.pow(coords.x - currentPoint.x, 2) + Math.pow(coords.y - currentPoint.y, 2));
+        if (dist < minDistanceUnits) {
+          minDistanceUnits = dist;
+          bestIndex = i;
+          bestCoords = coords;
+        }
+      }
+
+      const nextOrder = unvisited.splice(bestIndex, 1)[0];
+      // Convert abstract SVG points to kilometers: ~150 meters per relative coordinate unit
+      const distKm = parseFloat((minDistanceUnits * 0.15).toFixed(1));
+      totalDistanceKm += distKm;
+
+      route.push({
+        order: nextOrder,
+        coords: bestCoords,
+        distanceFromPreviousKm: distKm,
+        durationFromPreviousMin: Math.max(3, Math.round(distKm * 2.2)),
+      });
+
+      currentPoint = bestCoords;
+    }
+
+    // Calculate aggregated timeline schedules
+    let cumDistance = 0;
+    let cumDuration = 0;
+
+    const formattedStops = route.map((item, idx) => {
+      cumDistance += item.distanceFromPreviousKm;
+      // Combine travel time with a standard 4-minute delivery packet drop buffer for each house
+      cumDuration += item.durationFromPreviousMin + 4;
+
+      return {
+        ...item,
+        stopIndex: idx + 1,
+        cumulativeDistanceKm: parseFloat(cumDistance.toFixed(1)),
+        cumulativeDurationMin: cumDuration,
+      };
+    });
+
+    setOptimizedRoute(formattedStops);
+    setRouteStats({
+      distanceKm: parseFloat(cumDistance.toFixed(1)),
+      durationMin: cumDuration,
+    });
+  };
+
+  const moveStopUp = (index: number) => {
+    if (index === 0) return;
+    const newRoute = [...optimizedRoute];
+    const temp = newRoute[index];
+    newRoute[index] = newRoute[index - 1];
+    newRoute[index - 1] = temp;
+    recalculateRouteSegmentStats(newRoute);
+  };
+
+  const moveStopDown = (index: number) => {
+    if (index === optimizedRoute.length - 1) return;
+    const newRoute = [...optimizedRoute];
+    const temp = newRoute[index];
+    newRoute[index] = newRoute[index + 1];
+    newRoute[index + 1] = temp;
+    recalculateRouteSegmentStats(newRoute);
+  };
+
+  const recalculateRouteSegmentStats = (routeItems: any[]) => {
+    let currentPoint = { x: 50, y: 50 };
+    let cumDistance = 0;
+    let cumDuration = 0;
+
+    const updated = routeItems.map((item, idx) => {
+      const coords = item.coords;
+      const distUnits = Math.sqrt(Math.pow(coords.x - currentPoint.x, 2) + Math.pow(coords.y - currentPoint.y, 2));
+      const distKm = parseFloat((distUnits * 0.15).toFixed(1));
+      
+      cumDistance += distKm;
+      const durMin = Math.max(3, Math.round(distKm * 2.2));
+      cumDuration += durMin + 4; // 4 minutes drop-off cushion
+
+      currentPoint = coords;
+
+      return {
+        ...item,
+        stopIndex: idx + 1,
+        distanceFromPreviousKm: distKm,
+        durationFromPreviousMin: durMin,
+        cumulativeDistanceKm: parseFloat(cumDistance.toFixed(1)),
+        cumulativeDurationMin: cumDuration,
+      };
+    });
+
+    setOptimizedRoute(updated);
+    setRouteStats({
+      distanceKm: parseFloat(cumDistance.toFixed(1)),
+      durationMin: cumDuration,
+    });
+  };
+
+  const handleBatchDispatch = async () => {
+    if (!assignedRoutingDriverId) {
+      showToast('Por favor, escolha um entregador parceiro na lista!', 'warning');
+      return;
+    }
+    const driver = drivers.find(d => d.id === assignedRoutingDriverId);
+    if (!driver) return;
+
+    if (optimizedRoute.length === 0) {
+      showToast('Nenhuma rota calculada ou sem pedidos selecionados.', 'error');
+      return;
+    }
+
+    setIsRoutingLoading(true);
+    try {
+      const vehicle = driver.vehicleType === 'moto' ? 'Moto' : 'Carro';
+      
+      for (const item of optimizedRoute) {
+        const orderId = item.order.id;
+        const description = `Sacolas prontas! O entregador parceiro ${driver.name} (${vehicle} - placa ${driver.licensePlate}) retirou seu pedido em lote otimizado e já está em rota de entrega!`;
+        await db.updateOrderStatus(orderId, 'shipped', description, driver.id, driver.name);
+      }
+
+      // Sync active database states back to local memory
+      const allOrders = await db.getOrders();
+      setOrders(allOrders);
+      const allDeliveries = await db.getDeliveries();
+      setDeliveries(allDeliveries);
+
+      showToast(`Lote despachado! ${optimizedRoute.length} entregas atribuídas ao entregador ${driver.name} com sucesso!`, 'success');
+      
+      // Cleanup States
+      setSelectedRoutingOrderIds([]);
+      setOptimizedRoute([]);
+      setRouteStats(null);
+      setAssignedRoutingDriverId('');
+    } catch (err: any) {
+      console.error(err);
+      showToast('Falha ao despachar pedidos em lote: ' + err.message, 'error');
+    } finally {
+      setIsRoutingLoading(false);
+    }
+  };
   const [globalMinStock, setGlobalMinStock] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('O_FAVORITO_GLOBAL_MIN_STOCK');
@@ -1094,6 +1303,18 @@ export default function AdminPanel({
             }`}
           >
             Monitorar Entregas ({deliveries.length})
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('routing');
+              // Auto recalculate if we have selected items
+              handleOptimizeRoute();
+            }}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+              activeTab === 'routing' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            📍 Roteirização Inteligente
           </button>
 
         </div>
@@ -3673,6 +3894,535 @@ export default function AdminPanel({
             </div>
           )}
 
+          {activeTab === 'routing' && (
+            <div className="space-y-6 animate-fadeIn" id="intelligent-routing-panel">
+              {/* Header */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-gray-150 shadow-3xs">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2 font-sans">
+                    <Compass className="text-emerald-700 animate-spin-slow" size={20} />
+                    Roteirização Inteligente de Entregas
+                  </h3>
+                  <p className="text-xs text-gray-400 font-medium max-w-2xl">
+                    Selecione múltiplos pedidos pendentes ou em preparação de bairros próximos. Nosso algoritmo ordenará as paradas de forma otimizada para o entregador, reduzindo drasticamente o tempo, custo e consumo de combustível.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleOptimizeRoute();
+                      showToast('Rotas recalculadas com sucesso!', 'info');
+                    }}
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold px-3 py-1.5 rounded-lg text-xs cursor-pointer flex items-center gap-1 shrink-0 self-end md:self-auto"
+                  >
+                    <RefreshCw size={12} className="animate-spin" />
+                    Resetar / Recalcular
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid content */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Left Column: Orders Select Checklist (5 cols) */}
+                <div className="lg:col-span-5 space-y-4">
+                  <div className="bg-white border border-gray-150 rounded-2xl p-4 shadow-3xs space-y-3">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                      <h4 className="text-xs font-black text-gray-950 uppercase tracking-wider block font-sans">
+                        📦 1. Selecionar Pedidos
+                      </h4>
+                      <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-black text-[10px] px-2 py-0.5 rounded-full">
+                        {orders.filter(o => o.status === 'pending' || o.status === 'processing').length} elegíveis
+                      </span>
+                    </div>
+
+                    {/* Neighborhood Quick Filter */}
+                    <div className="grid grid-cols-1 gap-2 bg-slate-50 border border-gray-150 p-2.5 rounded-xl text-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-gray-650">Filtro Rápido por Bairro:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRoutingOrderIds([]);
+                            setOptimizedRoute([]);
+                            setRouteStats(null);
+                          }}
+                          className="text-rose-600 hover:text-rose-800 font-black text-[10px] uppercase block"
+                        >
+                          Limpar Seleção
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {Array.from(new Set(orders.filter(o => o.status === 'pending' || o.status === 'processing').map(o => o.neighborhood.trim().toUpperCase()))).map((neighborhood) => {
+                          const orderCountInNb = orders.filter(o => (o.status === 'pending' || o.status === 'processing') && o.neighborhood.trim().toUpperCase() === neighborhood).length;
+                          return (
+                            <button
+                              key={neighborhood}
+                              type="button"
+                              onClick={() => {
+                                const matchingIds = orders
+                                  .filter(o => (o.status === 'pending' || o.status === 'processing') && o.neighborhood.trim().toUpperCase() === neighborhood)
+                                  .map(o => o.id);
+                                
+                                // Toggle matching IDs
+                                const currentSelectedSet = new Set<string>(selectedRoutingOrderIds);
+                                const someSelected = matchingIds.some(id => currentSelectedSet.has(id));
+                                
+                                if (someSelected) {
+                                  matchingIds.forEach(id => currentSelectedSet.delete(id));
+                                } else {
+                                  matchingIds.forEach(id => currentSelectedSet.add(id));
+                                }
+                                
+                                const updatedList = Array.from(currentSelectedSet) as string[];
+                                setSelectedRoutingOrderIds(updatedList);
+                                handleOptimizeRoute(updatedList);
+                              }}
+                              className={`text-[9.5px] font-black px-2 py-1 rounded-md border transition-all ${
+                                orders.filter(o => (o.status === 'pending' || o.status === 'processing') && o.neighborhood.trim().toUpperCase() === neighborhood).every(o => selectedRoutingOrderIds.includes(o.id))
+                                  ? 'bg-emerald-750 border-emerald-800 text-white shadow-3xs'
+                                  : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-250'
+                              }`}
+                            >
+                              📍 {neighborhood} ({orderCountInNb})
+                            </button>
+                          );
+                        })}
+                        {Array.from(new Set(orders.filter(o => o.status === 'pending' || o.status === 'processing').map(o => o.neighborhood.toUpperCase()))).length === 0 && (
+                          <span className="text-[10px] text-gray-400 font-medium">Nenhum bairro com pedidos pendentes hoje.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Checklist of eligible orders */}
+                    <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
+                      {orders.filter(o => o.status === 'pending' || o.status === 'processing').map((order) => {
+                        const isSelected = selectedRoutingOrderIds.includes(order.id);
+                        const numItems = order.items.reduce((sum, item) => sum + item.quantity, 0);
+                        return (
+                          <div
+                            key={order.id}
+                            onClick={() => {
+                              const updated = isSelected
+                                ? selectedRoutingOrderIds.filter(id => id !== order.id)
+                                : [...selectedRoutingOrderIds, order.id];
+                              setSelectedRoutingOrderIds(updated);
+                              handleOptimizeRoute(updated);
+                            }}
+                            className={`p-3 rounded-xl border transition-all cursor-pointer select-none flex items-start gap-2.5 ${
+                              isSelected
+                                ? 'bg-emerald-50/40 border-emerald-300 shadow-3xs'
+                                : 'bg-white hover:bg-slate-50/50 border-gray-200'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} // Handled by div onClick
+                              className="mt-0.5 accent-emerald-700 pointer-events-none"
+                            />
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-mono font-black bg-gray-150 px-1.5 py-0.5 rounded text-gray-700">
+                                  #{order.id}
+                                </span>
+                                <span className={`text-[8.5px] font-extrabold px-1.5 py-0.5 rounded-full ${
+                                  order.status === 'processing' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                }`}>
+                                  {order.status === 'processing' ? '⚙️ EM SEPARAÇÃO' : '⏳ ACEITO'}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-gray-500 font-medium">
+                                <p className="text-gray-900 font-bold truncate">👤 {clients.find(c => c.id === order.userId)?.name || 'Cliente Particular'}</p>
+                                <p className="truncate">📍 {order.address}, {order.number}</p>
+                                <p className="text-indigo-950 font-semibold">🏘️ Bairro: <strong className="font-extrabold">{order.neighborhood}</strong></p>
+                              </div>
+                              <div className="flex justify-between items-center text-[9.5px] text-gray-400 pt-1 border-t border-dashed border-gray-100">
+                                <span>🛒 {numItems} {numItems === 1 ? 'item' : 'itens'}</span>
+                                <strong className="text-gray-900 font-extrabold font-sans">Total: R$ {order.total.toFixed(2)}</strong>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {orders.filter(o => o.status === 'pending' || o.status === 'processing').length === 0 && (
+                        <div className="text-center py-10 border border-dashed border-gray-200 rounded-xl bg-slate-50">
+                          <Truck className="mx-auto text-gray-300 mb-1" size={28} />
+                          <span className="text-xs text-gray-400 font-bold block">Nenhum pedido elegível pendente</span>
+                          <span className="text-[9.5px] text-gray-400 max-w-xs mx-auto block mt-0.5">Os pedidos precisam estar nos status 'Pendente' ou 'Em Separação' para permitir o agrupamento geográfico.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Radar Map, Optimal Route (7 cols) */}
+                <div className="lg:col-span-7 space-y-4">
+                  {selectedRoutingOrderIds.length === 0 ? (
+                    <div className="bg-white border border-gray-150 rounded-2xl p-12 text-center flex flex-col items-center justify-center gap-3 shadow-3xs h-[520px]">
+                      <div className="w-16 h-16 bg-emerald-50 text-emerald-800 rounded-full flex items-center justify-center border border-emerald-100 animate-bounce">
+                        <Map className="text-emerald-705" size={32} />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-black text-slate-900 font-sans">Simulação e Sequenciamento de Rota</h4>
+                        <p className="text-xs text-gray-400 font-medium max-w-sm mx-auto leading-relaxed">
+                          Selecione um ou mais pedidos na lista lateral para calcular automaticamente a sequência de paradas mais curta e desenhar o mapa de navegação interativo para o entregador.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      
+                      {/* Interactive Simulated GPS Radar Map */}
+                      <div className="bg-slate-950 rounded-2xl p-4 shadow-xl border border-slate-800 relative overflow-hidden">
+                        
+                        {/* Map Header Overlay */}
+                        <div className="absolute top-3 left-4 right-4 z-10 flex justify-between items-center pointer-events-none no-print">
+                          <span className="bg-slate-900/90 border border-slate-700 text-slate-100 text-[10px] font-mono px-2 py-0.5 rounded-md flex items-center gap-1.5 backdrop-blur-xs font-black">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                            GPS LOGÍSTICA (SIMULADOR DE ROTEIROS)
+                          </span>
+                          {routeStats && (
+                            <span className="bg-slate-900/90 border border-slate-700 text-slate-200 text-[9.5px] px-2 py-0.5 rounded-md font-bold font-mono text-[9px] backdrop-blur-xs">
+                              Distância Total: {routeStats.distanceKm} km
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Interactive Vector SVG Canvas */}
+                        <div className="w-full h-[280px] bg-slate-900/90 rounded-xl relative overflow-hidden flex items-center justify-center border border-slate-800 select-none">
+                          
+                          {/* CSS Animation keyframe overrides for moving delivery line pulse inside React */}
+                          <style dangerouslySetInnerHTML={{__html: `
+                            @keyframes routePulse {
+                              to {
+                                stroke-dashoffset: -30;
+                              }
+                            }
+                            @keyframes ripple {
+                              0% { transform: scale(0.8); opacity: 0.5; }
+                              100% { transform: scale(2.2); opacity: 0; }
+                            }
+                            .animate-ripple {
+                              animation: ripple 2s infinite linear;
+                            }
+                          `}} />
+
+                          {/* Radar Radar grid overlay */}
+                          <svg className="absolute inset-0 w-full h-full opacity-35" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                              <pattern id="radar-grid" width="30" height="30" patternUnits="userSpaceOnUse">
+                                <circle cx="15" cy="15" r="1.2" fill="#1e293b" />
+                                <rect width="30" height="30" fill="none" stroke="#334155" strokeWidth="0.3" strokeOpacity="0.4" />
+                              </pattern>
+                            </defs>
+                            <rect width="100%" height="100%" fill="url(#radar-grid)" />
+                            
+                            {/* Radar circular sweeps */}
+                            <circle cx="50%" cy="50%" r="50" fill="none" stroke="#059669" strokeWidth="0.5" strokeDasharray="3,10" className="opacity-40" />
+                            <circle cx="50%" cy="50%" r="90" fill="none" stroke="#059669" strokeWidth="0.5" strokeDasharray="5,12" className="opacity-25" />
+                            <circle cx="50%" cy="50%" r="140" fill="none" stroke="#059669" strokeWidth="0.5" strokeDasharray="4,15" className="opacity-15" />
+                          </svg>
+
+                          {/* Map Visuals SVG */}
+                          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                            
+                            {/* 1. DRAW PATH CONNECTIONS */}
+                            {optimizedRoute.length > 0 && (() => {
+                              let currentPoint = { x: 50, y: 50 };
+                              return optimizedRoute.map((stop) => {
+                                const nextCoords = stop.coords;
+                                const x1 = currentPoint.x;
+                                const y1 = currentPoint.y;
+                                const x2 = nextCoords.x;
+                                const y2 = nextCoords.y;
+                                
+                                currentPoint = nextCoords;
+                                const isHovered = activeHoverStopIdx === stop.stopIndex;
+
+                                return (
+                                  <g key={`path-${stop.order.id}`}>
+                                    <line
+                                      x1={x1}
+                                      y1={y1}
+                                      x2={x2}
+                                      y2={y2}
+                                      stroke={isHovered ? '#10b981' : '#059669'}
+                                      strokeWidth={isHovered ? '2' : '1.2'}
+                                      strokeOpacity={isHovered ? '0.9' : '0.6'}
+                                      strokeDasharray="4,4"
+                                      style={{
+                                        animation: 'routePulse 2s infinite linear',
+                                      }}
+                                    />
+                                    <circle
+                                      cx={(x1 + x2) / 2}
+                                      cy={(y1 + y2) / 2}
+                                      r="1.2"
+                                      fill={isHovered ? '#34d399' : '#10b981'}
+                                      className="animate-ping"
+                                    />
+                                  </g>
+                                );
+                              });
+                            })()}
+
+                            {/* 2. DRAW STORE CENTER (O Favorito HQ) */}
+                            <g transform="translate(50, 50)">
+                              <circle cx="0" cy="0" r="4" fill="#10b981" fillOpacity="0.15" />
+                              <circle cx="0" cy="0" r="8" fill="#10b981" fillOpacity="0.08" className="animate-pulse" />
+                              <circle cx="0" cy="0" r="2.8" fill="#047857" stroke="#ffffff" strokeWidth="0.8" />
+                              <rect x="-1" y="-1" width="2" height="2" fill="#ffffff" rx="0.3" />
+                            </g>
+
+                            {/* 3. DRAW SHIPPED TARGET NODES */}
+                            {optimizedRoute.map((stop) => {
+                              const isHovered = activeHoverStopIdx === stop.stopIndex;
+                              return (
+                                <g 
+                                  key={`node-${stop.order.id}`}
+                                  transform={`translate(${stop.coords.x}, ${stop.coords.y})`}
+                                  className="cursor-pointer"
+                                  onMouseEnter={() => setActiveHoverStopIdx(stop.stopIndex)}
+                                  onMouseLeave={() => setActiveHoverStopIdx(null)}
+                                >
+                                  {isHovered && (
+                                    <circle cx="0" cy="0" r="5" fill="#10b981" fillOpacity="0.3" className="origin-center" style={{transformBox: 'fill-box', transformOrigin: 'center', animation: 'ripple 1.5s infinite linear'}} />
+                                  )}
+                                  
+                                  <circle
+                                    cx="0"
+                                    cy="0"
+                                    r={isHovered ? '3.8' : '3'}
+                                    fill={isHovered ? '#10b981' : '#1e293b'}
+                                    stroke={isHovered ? '#ffffff' : '#059669'}
+                                    strokeWidth="0.8"
+                                    className="transition-all duration-150"
+                                  />
+
+                                  <text
+                                    x="0"
+                                    y="1"
+                                    textAnchor="middle"
+                                    fill="#ffffff"
+                                    fontSize="2.4"
+                                    fontWeight="black"
+                                    fontFamily="sans-serif"
+                                  >
+                                    {stop.stopIndex}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </svg>
+
+                          {/* Map Legend */}
+                          <div className="absolute bottom-3 left-4 flex gap-4 text-[9.5px] text-gray-400 font-mono font-bold no-print">
+                            <div className="flex items-center gap-1">
+                              <span className="inline-block w-2.5 h-2.5 bg-emerald-650 rounded-sm border border-white" />
+                              <span>Supermercado (Origem)</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="inline-block w-2.5 h-2.5 bg-slate-800 rounded-full border border-emerald-500 text-center text-[7px] text-white leading-none font-bold">❶</span>
+                              <span>Ponto de Parada</span>
+                            </div>
+                          </div>
+
+                          {/* Hover Tooltip Overlay */}
+                          {activeHoverStopIdx !== null && (() => {
+                            const stop = optimizedRoute.find(s => s.stopIndex === activeHoverStopIdx);
+                            if (!stop) return null;
+                            const clientName = clients.find(c => c.id === stop.order.userId)?.name || 'Cliente Particular';
+                            return (
+                              <div className="absolute bottom-3 right-4 bg-slate-900/95 border border-slate-700 p-2.5 rounded-lg text-slate-100 text-[10.5px] max-w-xs space-y-0.5 shadow-xl font-medium animate-fadeIn">
+                                <p className="font-extrabold text-emerald-400 flex items-center gap-1">
+                                  <span>Parada #{stop.stopIndex}: Pedido #{stop.order.id}</span>
+                                </p>
+                                <p className="truncate">👤 {clientName}</p>
+                                <p className="truncate text-gray-300">🏘️ Bairro: <strong>{stop.order.neighborhood}</strong></p>
+                                <p className="text-[9.5px] text-emerald-300 font-bold pt-1 border-t border-slate-800 flex justify-between gap-4">
+                                  <span>Trecho: {stop.distanceFromPreviousKm} km</span>
+                                  <span>Acumulado: {stop.cumulativeDistanceKm} km</span>
+                                </p>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Optimal Stops Route Sequence Timeline */}
+                      <div className="bg-white border border-gray-150 rounded-2xl p-4 shadow-3xs space-y-4">
+                        
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+                          <div>
+                            <h4 className="text-xs font-black text-gray-950 uppercase tracking-wider block font-sans">
+                              🛵 2. Roteiro e Fila de Paradas
+                            </h4>
+                            <p className="text-[10px] text-gray-400 font-medium font-sans">
+                              Arraste ou clique nas setas para ajustar manualmente a fila caso necessário.
+                            </p>
+                          </div>
+                          
+                          {routeStats && (
+                            <div className="text-right shrink-0 flex items-center gap-4 text-xs font-mono font-black text-gray-800">
+                              <div>
+                                <span className="text-[9px] text-gray-400 block font-sans">DISTÂNCIAS</span>
+                                <span>{routeStats.distanceKm} km total</span>
+                              </div>
+                              <div className="border-l border-gray-150 h-5" />
+                              <div>
+                                <span className="text-[9px] text-gray-400 block font-sans">TEMPO ESTIMADO</span>
+                                <span className="text-emerald-700">{routeStats.durationMin} min estim.</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sequence Loop list */}
+                        <div className="space-y-2">
+                          {optimizedRoute.map((stop, idx) => {
+                            const isHovered = activeHoverStopIdx === stop.stopIndex;
+                            const clientNameStr = clients.find(c => c.id === stop.order.userId)?.name || 'Cliente';
+                            return (
+                              <div
+                                key={stop.order.id}
+                                className={`border rounded-xl p-3 flex justify-between items-center gap-3 transition-all ${
+                                  isHovered ? 'border-emerald-300 bg-emerald-50/20 shadow-3xs' : 'border-gray-200 shadow-3xs'
+                                }`}
+                                onMouseEnter={() => setActiveHoverStopIdx(stop.stopIndex)}
+                                onMouseLeave={() => setActiveHoverStopIdx(null)}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <span className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs font-black select-none ${
+                                    isHovered ? 'bg-emerald-700 text-white' : 'bg-slate-900 text-white'
+                                  }`}>
+                                    {stop.stopIndex}
+                                  </span>
+
+                                  <div className="text-[11.5px] leading-snug min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <strong className="text-gray-900 font-bold block truncate max-w-[120px]">{clientNameStr}</strong>
+                                      <span className="text-[10px] text-gray-400 font-mono select-all font-bold">#{stop.order.id}</span>
+                                      
+                                      <span className="bg-emerald-50 text-emerald-800 text-[8.5px] font-black px-1.5 py-0.2 rounded border border-emerald-100 uppercase">
+                                        🏘️ {stop.order.neighborhood}
+                                      </span>
+                                    </div>
+                                    <p className="text-gray-400 truncate text-[10.5px] font-medium mt-0.5">{stop.order.address}, nº {stop.order.number}</p>
+                                    <p className="text-[9.5px] text-indigo-950 font-bold mt-0.5 font-mono">
+                                      Adicional: + {stop.distanceFromPreviousKm} km ({stop.durationFromPreviousMin} min) • Clientes acumulados: {stop.cumulativeDistanceKm} km ({stop.cumulativeDurationMin} min)
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Up / Down manually */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => moveStopUp(idx)}
+                                    disabled={idx === 0}
+                                    title="Mover parada para cima"
+                                    className="p-1 hover:bg-gray-150 rounded text-gray-500 hover:text-gray-950 disabled:opacity-30 cursor-pointer"
+                                  >
+                                    <ArrowUp size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => moveStopDown(idx)}
+                                    disabled={idx === optimizedRoute.length - 1}
+                                    title="Mover parada para baixo"
+                                    className="p-1 hover:bg-gray-150 rounded text-gray-500 hover:text-gray-950 disabled:opacity-30 cursor-pointer"
+                                  >
+                                    <ArrowDown size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updatedChecklist = selectedRoutingOrderIds.filter(id => id !== stop.order.id);
+                                      setSelectedRoutingOrderIds(updatedChecklist);
+                                      handleOptimizeRoute(updatedChecklist);
+                                    }}
+                                    title="Remover parada"
+                                    className="p-1 hover:bg-rose-50 rounded text-gray-400 hover:text-rose-700 cursor-pointer"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Dispatch configuration */}
+                        <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                          
+                          {/* Driver selection */}
+                          <div className="flex-1 max-w-xs">
+                            <label className="text-[10px] font-black uppercase text-gray-405 block mb-1 font-sans">Atribuir Motoboy / Motorista:</label>
+                            <select
+                              id="routing-driver-select"
+                              className="w-full bg-white border border-gray-250 rounded-lg py-1.5 px-2.5 text-xs font-bold text-gray-800 focus:outline-hidden"
+                              onChange={(e) => setAssignedRoutingDriverId(e.target.value)}
+                              value={assignedRoutingDriverId}
+                            >
+                              <option value="">-- Escolher Entregador --</option>
+                              {drivers.map(d => (
+                                <option key={d.id} value={d.id}>{d.name} ({d.vehicleType === 'moto' ? '🛵 Moto' : '🚗 Carro'})</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Combined confirmation sheet and dispatch block */}
+                          <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!assignedRoutingDriverId) {
+                                  showToast('Identifique o entregador para habilitar a visualização de impressão!', 'warning');
+                                  return;
+                                }
+                                setIsRoutePrintMode(true);
+                              }}
+                              disabled={!assignedRoutingDriverId}
+                              className="bg-slate-55 hover:bg-slate-100 border border-gray-250 text-gray-700 font-extrabold px-3 py-2 rounded-xl text-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
+                            >
+                              <Printer size={13} />
+                              Imprimir Guia
+                            </button>
+                            
+                            <button
+                              type="button"
+                              onClick={handleBatchDispatch}
+                              disabled={isRoutingLoading || !assignedRoutingDriverId}
+                              className="bg-emerald-700 hover:bg-emerald-800 active:scale-98 text-white border-b-2 border-emerald-950 font-black px-4.5 py-2 rounded-xl text-xs cursor-pointer flex items-center gap-1.5 transition-all text-xs shadow-xs disabled:opacity-50"
+                            >
+                              {isRoutingLoading ? (
+                                <>
+                                  <RefreshCw size={12} className="animate-spin" />
+                                  Despachando...
+                                </>
+                              ) : (
+                                <>
+                                  <Play size={12} fill="#ffffff" />
+                                  Despachar Lote de Pedidos 🚀
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+          )}
+
 
         </div>
       )}
@@ -3720,6 +4470,125 @@ export default function AdminPanel({
                 Sim, Excluir
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isRoutePrintMode && (
+        <div id="separation-modal-overlay" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-55 flex items-center justify-center p-4 overflow-y-auto animate-fadeIn print:bg-white print:p-0 print:static print:h-auto print:overflow-visible no-print">
+          <div className="bg-white rounded-3xl shadow-2xl border border-gray-150 max-w-4xl w-full h-full max-h-[90vh] flex flex-col overflow-hidden relative print:border-none print:shadow-none print:max-w-none print:h-auto print:static">
+            
+            {/* Header */}
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0 print:hidden">
+              <div className="flex items-center gap-2">
+                <Truck className="text-emerald-700" size={20} />
+                <h3 className="text-base font-black text-gray-900 font-sans">
+                  🖨️ Roteiro de Expedição - Impressão
+                </h3>
+              </div>
+              <button 
+                onClick={() => setIsRoutePrintMode(false)}
+                className="text-gray-400 hover:text-gray-650 cursor-pointer p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Print Area */}
+            <div className="flex-1 overflow-y-auto p-8 space-y-6 print:overflow-visible print:p-0" id="printable-routing-area">
+              <div id="print-section" className="space-y-6 print:p-0 print:m-0 print:static">
+                
+                {/* Print Title */}
+                <div className="border-b-2 border-slate-900 pb-4 text-center">
+                  <h1 className="text-xl font-black text-slate-950 font-sans">
+                    SUPERMERCADO O FAVORITO - GESTÃO LOGÍSTICA
+                  </h1>
+                  <p className="text-xs text-gray-500 font-bold tracking-wide mt-1 uppercase">
+                    Roteiro de Expedição (Entrega de Lote Otimizado)
+                  </p>
+                  <div className="flex flex-col sm:flex-row justify-between items-center mt-4 text-xs text-slate-800 font-medium bg-slate-50 border border-slate-200 rounded-xl p-3 print:bg-white print:p-0 print:border-none">
+                    <div>
+                      Entregador Parceiro: <strong className="text-slate-900 font-extrabold">{drivers.find(d => d.id === assignedRoutingDriverId)?.name || 'Não atribuído'}</strong>
+                    </div>
+                    <div>
+                      Data da Viagem: <strong>{new Date().toLocaleDateString('pt-BR')}</strong> às <strong>{new Date().toLocaleTimeString('pt-BR')}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Logistical indicators */}
+                <div className="grid grid-cols-3 gap-2 border border-slate-900 p-4 text-center rounded-xl print:border-black">
+                  <div>
+                    <span className="text-[10px] block text-gray-400 uppercase font-bold font-sans">Total de Paradas</span>
+                    <strong className="text-xl font-black text-slate-900">{optimizedRoute.length}</strong>
+                  </div>
+                  <div className="border-x border-slate-200">
+                    <span className="text-[10px] block text-gray-400 uppercase font-bold font-sans">Distância Total</span>
+                    <strong className="text-xl font-black text-slate-900">{routeStats?.distanceKm} km</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] block text-gray-400 uppercase font-bold font-sans">Duração Tempo</span>
+                    <strong className="text-xl font-black text-emerald-700">{routeStats?.durationMin} min</strong>
+                  </div>
+                </div>
+
+                {/* Stops in sequence */}
+                <div className="space-y-4">
+                  <span className="text-xs font-black border-b border-gray-900 pb-1 block uppercase text-slate-800 tracking-wider">Paradas do Itinerário Otimizado</span>
+                  
+                  {optimizedRoute.map((stop) => (
+                    <div key={stop.order.id} className="border border-slate-350 p-4 rounded-xl flex flex-col gap-2 text-xs break-inside-avoid shadow-3xs bg-white print:shadow-none">
+                      <div className="flex justify-between items-center border-b border-dashed border-slate-200 pb-2 flex-wrap gap-2">
+                        <span className="bg-slate-950 text-white text-[11px] font-black px-2.5 py-0.5 rounded-md">
+                          PARADA #{stop.stopIndex} • Pedido #{stop.order.id}
+                        </span>
+                        <span className="text-slate-900 font-extrabold text-[12px]">
+                          Custo Total: R$ {stop.order.total.toFixed(2)} ({stop.order.paymentMethod.toUpperCase()})
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 mt-1 text-[11px] font-medium text-slate-700">
+                        <p>👤 Cliente: <strong className="text-slate-950 font-bold">{clients.find(c => c.id === stop.order.userId)?.name || stop.order.userContact}</strong></p>
+                        <p>📞 Whatsapp / Contato: <strong className="text-slate-950 font-semibold">{stop.order.userContact}</strong></p>
+                        <p className="sm:col-span-2">📍 Endereço de Entrega: <strong className="text-slate-950 font-extrabold">{stop.order.address}, nº {stop.order.number}, {stop.order.neighborhood}</strong></p>
+                        {stop.order.complement && <p className="sm:col-span-2 text-gray-500">🏢 Complemento: {stop.order.complement}</p>}
+                      </div>
+                      
+                      <div className="mt-2 pt-2 border-t border-dotted border-gray-200 text-[10.5px] font-medium text-slate-600">
+                        <strong className="text-slate-800 text-[10.5px]">Sacola de Compras ({stop.order.items.reduce((sum: number, i: any) => sum + i.quantity, 0)} itens):</strong>{' '}
+                        {stop.order.items.map((i: any) => `${i.product.name} (x${i.quantity})`).join(', ')}
+                      </div>
+
+                      <div className="mt-2.5 flex justify-between items-center text-[10px] text-gray-400 font-sans font-bold border-t border-dashed border-gray-150 pt-2 shrink-0">
+                        <span>Ponto anterior: + {stop.distanceFromPreviousKm} km ({stop.durationFromPreviousMin} min)</span>
+                        <span className="border border-slate-800 px-3 py-1 bg-slate-50 uppercase text-[9px] text-slate-900">
+                          Assinatura do Recebedor: ____________________________
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-4 px-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-2 shrink-0 print:hidden">
+              <button
+                onClick={() => setIsRoutePrintMode(false)}
+                className="px-4 py-2 border border-gray-350 rounded-xl font-bold bg-white hover:bg-gray-100 text-xs text-gray-700 cursor-pointer transition-colors"
+              >
+                Voltar ao Painel
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-black rounded-xl cursor-pointer flex items-center gap-1.5 shadow-sm transition-all"
+              >
+                <Printer size={14} />
+                Gerar Impressão (A4 / Termo-PDF)
+              </button>
+            </div>
+
           </div>
         </div>
       )}

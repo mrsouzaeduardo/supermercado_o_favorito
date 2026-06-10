@@ -76,6 +76,25 @@ export default function App() {
   useEffect(() => {
     loadProducts();
 
+    // Check URL parameters for tracking deep links (QR Code escaneado)
+    const params = new URLSearchParams(window.location.search);
+    const trackId = params.get('track');
+    if (trackId) {
+      const autoLoadTracking = async () => {
+        try {
+          const allOrders = await db.getOrders();
+          const foundOrder = allOrders.find(o => o.id.trim().toUpperCase() === trackId.trim().toUpperCase());
+          if (foundOrder) {
+            setLastPlacedOrder(foundOrder);
+            setIsOrderTrackerActive(true);
+          }
+        } catch (e) {
+          console.error('Erro ao autocarregar rastreamento:', e);
+        }
+      };
+      autoLoadTracking();
+    }
+
     // Load active cart from localStorage if present
     try {
       const savedCart = localStorage.getItem('O_FAVORITO_CART');

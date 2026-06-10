@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Printer, CheckCircle2, MapPin, Smartphone, Calendar, DollarSign, Tag, ClipboardList } from 'lucide-react';
 import { Order, CartItem } from '../types';
 
@@ -10,6 +10,9 @@ interface SeparationGuideModalProps {
 }
 
 export default function SeparationGuideModal({ order, clientName, clientContact, onClose }: SeparationGuideModalProps) {
+  // Configurable layout state: 'a4' for optimized A4 sheets, 'thermal' for 80mm continuous thermal receipt rolls
+  const [printLayout, setPrintLayout] = useState<'a4' | 'thermal'>('a4');
+
   // Local state to track which products have been picked (checked)
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
 
@@ -25,6 +28,18 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
     window.print();
   };
 
+  // Sync print mode class to document body so CSS print layouts compile correctly
+  useEffect(() => {
+    if (printLayout === 'thermal') {
+      document.body.classList.add('body-print-thermal');
+    } else {
+      document.body.classList.remove('body-print-thermal');
+    }
+    return () => {
+      document.body.classList.remove('body-print-thermal');
+    };
+  }, [printLayout]);
+
   // Group items by category for optimized picking flow in-store
   const itemsByCategory: Record<string, CartItem[]> = {};
   order.items.forEach(item => {
@@ -38,8 +53,23 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
   const totalItemsCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const checkedItemsCount = order.items.filter(item => checkedItems[item.product.id]).reduce((sum, item) => sum + item.quantity, 0);
 
+  const trackingUrl = `${window.location.origin}/?track=${order.id}`;
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(trackingUrl)}`;
+
   return (
     <div id="separation-modal-overlay" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-fadeIn select-none print:bg-white print:p-0 print:static print:h-auto print:overflow-visible">
+      {/* Dynamic override of page printing dimensions for narrow receipt rolls, to prevent printer margins from cutting text */}
+      {printLayout === 'thermal' && (
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media print {
+            @page {
+              margin: 2mm 3mm !important;
+              size: auto;
+            }
+          }
+        `}} />
+      )}
+
       {/* Modal Card */}
       <div className="bg-white rounded-3xl shadow-2xl border border-gray-150 max-w-2xl w-full h-full max-h-[90vh] flex flex-col overflow-hidden relative print:border-none print:shadow-none print:max-w-none print:h-auto print:static" id="modal-container">
         
@@ -71,7 +101,14 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
         <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 print:overflow-visible print:p-0" id="printable-area-container">
           
           {/* Printable Layout Target Section */}
-          <div id="print-section" className="space-y-6 print:p-0 print:m-0 print:static">
+          <div 
+            id="print-section" 
+            className={`space-y-6 print:p-0 print:m-0 print:static transition-all duration-300 ${
+              printLayout === 'thermal' 
+                ? 'print-mode-thermal max-w-[340px] mx-auto border border-dashed border-slate-300 p-5 bg-slate-50/40 text-slate-950 shadow-inner rounded-2xl' 
+                : ''
+            }`}
+          >
             
             {/* Print Only Header (Hidden on UI) */}
             <div className="hidden show-on-print print:block mb-6 border-b-2 border-gray-950 pb-4 print-main-header">
@@ -80,13 +117,25 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
                   <h1 className="text-xl font-black text-gray-900 font-display uppercase tracking-wider">Supermercado O Favorito</h1>
                   <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">GUIA DE SEPARAÇÃO E ENTREGA</p>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs font-black bg-slate-100 border border-slate-300 px-3 py-1 rounded-sm uppercase font-mono">
-                    {order.id}
-                  </span>
-                  <p className="text-[9px] text-gray-400 font-medium mt-1">
-                    Gerado em: {new Date().toLocaleString('pt-BR')}
-                  </p>
+                <div className="flex items-center gap-4 text-right">
+                  <div className="flex flex-col items-end">
+                    <span className="text-xs font-black bg-slate-100 border border-slate-300 px-3 py-1 rounded-sm uppercase font-mono">
+                      {order.id}
+                    </span>
+                    <p className="text-[9px] text-gray-400 font-medium mt-1">
+                      Gerado em: {new Date().toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                  {/* Dynamic tracking QR Code for print */}
+                  <div className="flex flex-col items-center gap-0.5 border border-slate-300 p-1 bg-white rounded-lg">
+                    <img 
+                      src={qrImageUrl} 
+                      alt="Rastreamento" 
+                      className="w-12 h-12 shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                    <span className="text-[6.5px] font-black uppercase text-slate-800 tracking-wider font-sans">SCAN ROTEAR</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -153,6 +202,32 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
                     Total Compra: R$ {order.total.toFixed(2).replace('.', ',')}
                   </p>
                 </div>
+              </div>
+             </div>
+
+            {/* QR Code de Rastreamento Impresso no Cupom/PDF */}
+            <div className="bg-slate-50 border border-gray-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center gap-4 justify-between transition-all">
+              <div className="flex-1 space-y-1 text-center sm:text-left">
+                <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-250 px-2 py-0.5 rounded-sm uppercase tracking-wider inline-block">
+                  📲 QR Code Rastreio & Entrega
+                </span>
+                <h4 className="text-xs font-black text-slate-900 font-sans leading-snug">
+                  Módulo de Rastreamento Otimizado
+                </h4>
+                <p className="text-[10px] text-gray-450 font-medium leading-relaxed max-w-sm">
+                  <strong>Entregador:</strong> Escaneie com a câmera do celular para abrir o trajeto no Maps ou Waze diretamente da tela do celular.<br />
+                  <strong>Cliente:</strong> Escaneie ao receber para Confirmar Recebimento direto na plataforma com total segurança.
+                </p>
+              </div>
+
+              <div className="bg-white border border-slate-200 p-2 rounded-xl flex flex-col items-center gap-1 shrink-0 shadow-3xs">
+                <img 
+                  src={qrImageUrl} 
+                  alt="QR Rastreamento" 
+                  className="w-20 h-20 shrink-0 select-all"
+                  referrerPolicy="no-referrer"
+                />
+                <span className="text-[8px] font-mono font-black text-slate-800 bg-slate-100 px-1 py-0.2 rounded">{order.id}</span>
               </div>
             </div>
 
@@ -250,24 +325,54 @@ export default function SeparationGuideModal({ order, clientName, clientContact,
         </div>
 
         {/* Modal Footer (Always visible on UI, hidden from printer) */}
-        <div className="p-4 px-6 border-t border-gray-100 bg-gray-50 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0 no-print">
-          <div className="text-xs text-gray-500 font-medium">
-            💡 Dica: Toque nos produtos para marcar como separado na tela.
+        <div className="p-4 px-6 border-t border-gray-100 bg-gray-50 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 shrink-0 no-print">
+          <div className="flex flex-col gap-1.5 flex-1">
+            <span className="text-[10px] text-gray-500 font-extrabold uppercase tracking-wider block">
+              ⚙️ Layout de Impressão (Economia de Papel & Térmica)
+            </span>
+            <div className="flex bg-gray-200/70 p-0.5 rounded-xl border border-gray-205 w-full max-w-sm self-start">
+              <button
+                type="button"
+                onClick={() => setPrintLayout('a4')}
+                className={`flex-1 px-3 py-1.5 text-[11px] font-extrabold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                  printLayout === 'a4' 
+                    ? 'bg-emerald-600 text-white shadow-xs' 
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                📄 A4 Compacto
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintLayout('thermal')}
+                className={`flex-1 px-3 py-1.5 text-[11px] font-extrabold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                  printLayout === 'thermal' 
+                    ? 'bg-amber-600 text-white shadow-xs' 
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                📟 Cupom Térmico (80mm)
+              </button>
+            </div>
           </div>
           
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex gap-2 shrink-0">
             <button
               onClick={onClose}
-              className="flex-1 sm:flex-none px-4 py-2 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 text-xs font-extrabold rounded-xl cursor-pointer transition-colors"
+              className="flex-1 md:flex-none px-4 py-2 bg-white hover:bg-gray-100 border border-gray-250 text-gray-700 text-xs font-extrabold rounded-xl cursor-pointer transition-colors"
             >
               Fechar Painel
             </button>
             <button
               onClick={handlePrint}
-              className="flex-1 sm:flex-none px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black rounded-xl cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xs hover:shadow-md"
+              className={`flex-1 md:flex-none px-4.5 py-2 text-white text-xs font-black rounded-xl cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xs hover:shadow-md hover:scale-[1.01] active:scale-95 ${
+                printLayout === 'thermal'
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : 'bg-emerald-700 hover:bg-emerald-800'
+              }`}
             >
               <Printer size={15} />
-              Imprimir Guia (PDF)
+              Imprimir {printLayout === 'thermal' ? 'Cupom' : 'Guia (A4)'}
             </button>
           </div>
         </div>
