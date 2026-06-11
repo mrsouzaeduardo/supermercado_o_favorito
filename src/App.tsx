@@ -8,6 +8,7 @@ import ProfileModal from './components/ProfileModal';
 import OrderTracker from './components/OrderTracker';
 import AdminPanel from './components/AdminPanel';
 import TermsModal from './components/TermsModal';
+import QuickReorder from './components/QuickReorder';
 import { db } from './lib/supabase';
 import { Product, CartItem, User, Order } from './types';
 import { CATEGORIES } from './data/mockProducts';
@@ -163,6 +164,34 @@ export default function App() {
       setCartItems(updatedCart);
     }
   }, [products]);
+
+  // Toast feedback state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((prev) => (prev?.message === message ? null : prev));
+    }, 4000);
+  };
+
+  const handleAddBatchToCart = (items: { product: Product; quantity: number }[]) => {
+    setCartItems((prevItems) => {
+      let updated = [...prevItems];
+      items.forEach((item) => {
+        if (item.product.stock <= 0) return;
+        const existingIdx = updated.findIndex((u) => u.product.id === item.product.id);
+        if (existingIdx !== -1) {
+          const newQty = Math.min(updated[existingIdx].quantity + item.quantity, item.product.stock);
+          updated[existingIdx] = { ...updated[existingIdx], quantity: newQty };
+        } else {
+          const newQty = Math.min(item.quantity, item.product.stock);
+          updated.push({ product: item.product, quantity: newQty });
+        }
+      });
+      return updated;
+    });
+  };
 
   const loadProducts = async () => {
     const data = await db.getProducts();
@@ -398,6 +427,17 @@ export default function App() {
               onSelectPromoOnly={(promoVal) => setPromoOnly(promoVal)}
               pointsActive={pointsActive}
             />
+
+            {/* Quick Reorder (Compra Rápida / Reposição de Dispensa) */}
+            {user && (
+              <QuickReorder
+                user={user}
+                availableProducts={products}
+                onAddBatch={handleAddBatchToCart}
+                onAddSingle={handleAddToCart}
+                showToast={showToast}
+              />
+            )}
 
             {/* Shopping Catalog Section */}
             <div className="space-y-6 pt-2" id="catalog-anchoring">
@@ -702,6 +742,23 @@ export default function App() {
         }}
         onLogout={handleLogout}
       />
+
+      {/* Floating System Toast Alerts */}
+      {toast && (
+        <div 
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-xl font-sans text-xs font-bold animate-fadeIn transition-all duration-300 ${
+            toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+            toast.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' :
+            'bg-slate-50 border-slate-200 text-slate-800'
+          }`}
+          id="client-active-toast"
+        >
+          <span className="text-[13px]">
+            {toast.type === 'success' ? '✅' : toast.type === 'error' ? '❌' : 'ℹ️'}
+          </span>
+          <span className="leading-tight">{toast.message}</span>
+        </div>
+      )}
 
       </div>
     </div>
