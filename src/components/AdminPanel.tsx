@@ -82,6 +82,14 @@ export default function AdminPanel({
   });
   const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
 
+  // Hortifruti banner custom title/subtitle
+  const [hortifrutiBannerTitle, setHortifrutiBannerTitle] = useState(() => {
+    return localStorage.getItem('O_FAVORITO_HORTIFRUTI_PROMO_TITLE') || "Super Terça e Quarta do Hortifrúti";
+  });
+  const [hortifrutiBannerSubtitle, setHortifrutiBannerSubtitle] = useState(() => {
+    return localStorage.getItem('O_FAVORITO_HORTIFRUTI_PROMO_SUBTITLE') || "Até 35% de desconto direto do produtor";
+  });
+
   // Geographic coordinates simulation for neighborhoods in Natal/RN region around "O Favorito" (Center)
   const NEIGHBORHOOD_COORDS: Record<string, { x: number; y: number }> = {
     'PONTA NEGRA': { x: 28, y: 78 },
@@ -4683,6 +4691,64 @@ export default function AdminPanel({
                       {products.filter(p => p.isPromo).length} produtos
                     </p>
                   </div>
+                </div>
+              </div>
+
+              {/* Banner do Hortifrúti Config Card */}
+              <div className="bg-white border border-gray-150 p-5 rounded-2xl shadow-3xs space-y-4">
+                <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
+                  <span className="text-xl">🍎</span>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 font-display uppercase tracking-wider">
+                      Banner do Hortifrúti - Dias de Super Ofertas
+                    </h4>
+                    <p className="text-[11px] text-gray-400 font-medium">
+                      Personalize os dias e o texto de promoção que aparecem no banner rotativo de Hortifrúti da tela inicial.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-gray-700 block uppercase font-sans">
+                      Título do Banner *
+                    </label>
+                    <input
+                      type="text"
+                      value={hortifrutiBannerTitle}
+                      onChange={(e) => setHortifrutiBannerTitle(e.target.value)}
+                      placeholder="Ex: Super Terça e Quarta do Hortifrúti"
+                      className="w-full text-xs font-semibold p-2.5 bg-slate-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-1 focus:ring-emerald-700 transition-all font-sans"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-gray-700 block uppercase font-sans">
+                      Subtítulo / Promoção *
+                    </label>
+                    <input
+                      type="text"
+                      value={hortifrutiBannerSubtitle}
+                      onChange={(e) => setHortifrutiBannerSubtitle(e.target.value)}
+                      placeholder="Ex: Até 35% de desconto direto do produtor"
+                      className="w-full text-xs font-semibold p-2.5 bg-slate-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-1 focus:ring-emerald-700 transition-all font-sans"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem('O_FAVORITO_HORTIFRUTI_PROMO_TITLE', hortifrutiBannerTitle);
+                      localStorage.setItem('O_FAVORITO_HORTIFRUTI_PROMO_SUBTITLE', hortifrutiBannerSubtitle);
+                      showToast('Configurações do banner do Hortifrúti salvas com sucesso!', 'success');
+                    }}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors font-sans"
+                  >
+                    <Save size={13} />
+                    Salvar Banner do Hortifrúti
+                  </button>
                 </div>
               </div>
 

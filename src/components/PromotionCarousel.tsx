@@ -22,11 +22,14 @@ interface PromotionCarouselProps {
 export default function PromotionCarousel({ onSelectCategory, onSelectPromoOnly, pointsActive }: PromotionCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  const hortifrutiTitle = localStorage.getItem('O_FAVORITO_HORTIFRUTI_PROMO_TITLE') || "Super Terça e Quarta do Hortifrúti";
+  const hortifrutiSubtitle = localStorage.getItem('O_FAVORITO_HORTIFRUTI_PROMO_SUBTITLE') || "Até 35% de desconto direto do produtor";
+
   const banners: PromoBanner[] = [
     {
       id: 1,
-      title: "Super Terça e Quarta do Hortifrúti",
-      subtitle: "Até 35% de desconto direto do produtor",
+      title: hortifrutiTitle,
+      subtitle: hortifrutiSubtitle,
       badge: "Sacolão do Favorito",
       description: pointsActive 
         ? "Frutas, legumes e verduras fresquinhas com o menor preço e pontos em dobro no nosso programa de fidelidade!"
@@ -46,8 +49,11 @@ export default function PromotionCarousel({ onSelectCategory, onSelectPromoOnly,
       bgGradient: "from-rose-900 via-red-800 to-rose-700",
       actionText: "Explorar Produtos",
       categoryTrigger: "Todos"
-    },
-    pointsActive ? {
+    }
+  ];
+
+  if (pointsActive) {
+    banners.push({
       id: 3,
       title: "Clube de Vantagens O Favorito",
       subtitle: "Acumule pontos em cada compra!",
@@ -57,18 +63,20 @@ export default function PromotionCarousel({ onSelectCategory, onSelectPromoOnly,
       bgGradient: "from-emerald-950 via-teal-900 to-emerald-800",
       actionText: "Cadastre-se Já",
       categoryTrigger: "Todos"
-    } : {
-      id: 3,
-      title: "Atendimento Rápido pelo WhatsApp",
-      subtitle: "Fale diretamente com nossa equipe",
-      badge: "Suporte Imediato",
-      description: "Tire dúvidas sobre produtos, faça encomendas especiais ou solicite suporte imediato à nossa equipe de atendimento!",
-      icon: <Award size={40} className="text-emerald-300" />,
-      bgGradient: "from-emerald-950 via-slate-900 to-emerald-800",
-      actionText: "Falar Conosco",
-      categoryTrigger: "Todos"
-    }
-  ];
+    });
+  }
+
+  banners.push({
+    id: 4,
+    title: "Atendimento Rápido pelo WhatsApp",
+    subtitle: "Fale diretamente com nossa equipe",
+    badge: "Suporte Imediato",
+    description: "Tire dúvidas sobre produtos, faça encomendas especiais ou solicite suporte imediato à nossa equipe de atendimento!",
+    icon: <Award size={40} className="text-emerald-300" />,
+    bgGradient: "from-emerald-950 via-slate-900 to-emerald-800",
+    actionText: "Falar Conosco",
+    categoryTrigger: "Todos"
+  });
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -86,6 +94,12 @@ export default function PromotionCarousel({ onSelectCategory, onSelectPromoOnly,
   };
 
   const handleAction = (banner: PromoBanner) => {
+    if (banner.id === 4 || banner.actionText === "Falar Conosco") {
+      const message = "Ola, tudo bem? Estou com duvidas, pode me ajudar?";
+      const encodedMsg = encodeURIComponent(message);
+      window.open(`https://wa.me/553136359495?text=${encodedMsg}`, '_blank');
+      return;
+    }
     if (banner.categoryTrigger) {
       if (banner.id === 1) {
         onSelectCategory("Hortifrúti");
