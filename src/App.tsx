@@ -631,7 +631,7 @@ export default function App() {
           <div className="pt-6 border-t border-emerald-900 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-semibold text-emerald-500">
             <span>© 2026 Supermercado O Favorito Ltda. Todos os direitos reservados.</span>
             <div className="text-emerald-400 font-bold bg-white/5 py-1 px-3 rounded-full border border-white/5">
-              Desenvolvido por <span className="text-white hover:text-green-300 transition-colors">Vitta Systems</span>
+              Desenvolvido por <a href="https://nextym.vercel.app/" target="_blank" rel="noopener noreferrer" className="text-white hover:text-green-300 transition-colors">NEXT YM</a>
             </div>
             <div className="flex gap-4">
               <button

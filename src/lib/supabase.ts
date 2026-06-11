@@ -328,6 +328,9 @@ export const db = {
             whatsapp: user.whatsapp,
             points: Number(user.points),
             createdAt: user.created_at,
+            city: user.city || '',
+            neighborhood: user.neighborhood || '',
+            streetNumber: user.street_number || user.streetNumber || '',
           };
         } else {
           // Register user
@@ -356,6 +359,9 @@ export const db = {
             whatsapp: newUserPayload.whatsapp,
             points: newUserPayload.points,
             createdAt: newUserPayload.created_at,
+            city: '',
+            neighborhood: '',
+            streetNumber: '',
           };
         }
       } catch (e: any) {
@@ -402,6 +408,9 @@ export const db = {
       whatsapp: user.whatsapp,
       points: user.points,
       createdAt: user.createdAt,
+      city: user.city || '',
+      neighborhood: user.neighborhood || '',
+      streetNumber: user.streetNumber || user.street_number || '',
     };
   },
 
