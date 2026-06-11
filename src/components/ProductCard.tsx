@@ -10,13 +10,68 @@ interface ProductCardProps {
   onRemove: (productId: string) => void;
   userPointsEarned?: boolean;
   pointsActive?: boolean;
+  campaign?: {
+    id: string;
+    name: string;
+    discountPercent?: number;
+    startDate: string;
+    endDate: string;
+    status: 'active' | 'scheduled' | 'expired';
+  };
 }
 
-export default function ProductCard({ product, cartQuantity, onAdd, onRemove, pointsActive = true }: ProductCardProps) {
+export default function ProductCard({ product, cartQuantity, onAdd, onRemove, pointsActive = true, campaign }: ProductCardProps) {
   const displayPrice = product.promoPrice && product.isPromo ? product.promoPrice : product.price;
   const originalPrice = product.price;
   const hasPromo = product.isPromo && product.promoPrice;
   const discountPercent = hasPromo ? Math.round(((originalPrice - (product.promoPrice || 0)) / originalPrice) * 100) : 0;
+
+  const [scarcityText, setScarcityText] = React.useState('');
+  const [isUrgent, setIsUrgent] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!campaign) return;
+
+    const updateTimer = () => {
+      try {
+        const end = new Date(campaign.endDate + 'T23:59:59');
+        const now = new Date();
+        const diffMs = end.getTime() - now.getTime();
+
+        if (diffMs <= 0) {
+          setScarcityText("Promoção expirada");
+          setIsUrgent(false);
+          return;
+        }
+
+        const diffHours = diffMs / (1000 * 60 * 60);
+        const diffDays = Math.ceil(diffHours / 24);
+
+        if (diffHours <= 24) {
+          const h = Math.floor(diffHours);
+          const m = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+          setScarcityText(`Últimas ${h}h ${m}m!`);
+          setIsUrgent(true);
+        } else if (diffDays <= 2) {
+          const dayString = diffDays === 1 ? 'Amanhã' : '2 dias';
+          setScarcityText(`Acaba em ${dayString}!`);
+          setIsUrgent(true);
+        } else {
+          const daysOfWeek = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+          const endDayName = daysOfWeek[end.getDay()];
+          setScarcityText(`Válido até ${endDayName}!`);
+          setIsUrgent(false);
+        }
+      } catch (e) {
+        setScarcityText('Tempo limitado!');
+        setIsUrgent(false);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 60000);
+    return () => clearInterval(interval);
+  }, [campaign]);
 
   return (
     <div 
@@ -51,14 +106,43 @@ export default function ProductCard({ product, cartQuantity, onAdd, onRemove, po
             <span>+{product.pointsAwarded} pts</span>
           </div>
         )}
+
+        {/* Dynamic Scarcity/Campaign bar */}
+        {campaign && scarcityText && (
+          <div 
+            className={`absolute bottom-0 left-0 right-0 py-1.5 px-2.5 text-[8.5px] sm:text-[9.5px] font-black uppercase tracking-wider flex items-center justify-between text-white shadow-md transition-all duration-300 ${
+              isUrgent 
+                ? 'bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 animate-pulse' 
+                : 'bg-slate-900/90 backdrop-blur-xs'
+            }`}
+          >
+            <span className="flex items-center gap-0.5 max-w-[65%] truncate">
+              <span className="animate-bounce">⚡</span> {campaign.name}
+            </span>
+            <span className="font-mono text-[8px] sm:text-[9px] font-black shrink-0 tracking-normal">
+              {scarcityText}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Product Information */}
       <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between space-y-2.5 sm:space-y-3">
         <div className="space-y-1">
-          <span className="text-[9px] sm:text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
-            {product.category}
-          </span>
+          <div className="flex items-center justify-between gap-1 flex-wrap">
+            <span className="text-[9px] sm:text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+              {product.category}
+            </span>
+            {campaign && (
+              <span className={`text-[8px] sm:text-[8.5px] font-black uppercase px-2 py-0.5 rounded tracking-wider ${
+                isUrgent 
+                  ? 'bg-rose-50 text-rose-700 border border-rose-200' 
+                  : 'bg-amber-50 text-amber-800 border border-amber-250/50'
+              }`}>
+                {isUrgent ? 'Corra!' : 'Oferta'}
+              </span>
+            )}
+          </div>
           <h3 className="text-xs sm:text-sm font-semibold text-gray-800 line-clamp-2 min-h-[36px] sm:min-h-[40px] group-hover:text-emerald-800 transition-colors">
             {product.name}
           </h3>

@@ -165,6 +165,24 @@ export default function App() {
     }
   }, [products]);
 
+  // Active weekly campaigns state to populate ProductCard badging
+  const [activeCampaigns, setActiveCampaigns] = useState<any[]>([]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('O_FAVORITO_WEEKLY_CAMPAIGNS');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const active = parsed.filter((c: any) => c.status === 'active');
+        setActiveCampaigns(active);
+      } catch (e) {
+        console.error('Error loading campaigns inside App:', e);
+      }
+    } else {
+      setActiveCampaigns([]);
+    }
+  }, [products, isAdminActive]);
+
   // Toast feedback state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -539,6 +557,7 @@ export default function App() {
                   {filteredProducts.map((p) => {
                     const existingItem = cartItems.find((itm) => itm.product.id === p.id);
                     const qty = existingItem ? existingItem.quantity : 0;
+                    const matchingCampaign = activeCampaigns.find((c) => Array.isArray(c.productIds) && c.productIds.includes(p.id));
                     return (
                       <ProductCard
                         key={p.id}
@@ -547,6 +566,7 @@ export default function App() {
                         onAdd={handleAddToCart}
                         onRemove={handleRemoveFromCart}
                         pointsActive={pointsActive}
+                        campaign={matchingCampaign}
                       />
                     );
                   })}
