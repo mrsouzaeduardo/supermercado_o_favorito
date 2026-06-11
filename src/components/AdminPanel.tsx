@@ -29,7 +29,7 @@ export default function AdminPanel({
   onUpdatePointsDiscountType,
   onAdminAuthChange,
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'products' | 'delivery' | 'drivers' | 'clients' | 'deliveries' | 'routing'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'products' | 'delivery' | 'drivers' | 'clients' | 'deliveries' | 'routing' | 'offers'>('dashboard');
   const [dashboardSubView, setDashboardSubView] = useState<'sales' | 'inventory'>('sales');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -43,6 +43,44 @@ export default function AdminPanel({
   const [isRoutingLoading, setIsRoutingLoading] = useState(false);
   const [activeHoverStopIdx, setActiveHoverStopIdx] = useState<number | null>(null);
   const [isRoutePrintMode, setIsRoutePrintMode] = useState(false);
+
+  // Weekly / Periodical Offers states
+  const [weeklyCampaigns, setWeeklyCampaigns] = useState<{
+    id: string;
+    name: string;
+    discountPercent?: number;
+    startDate: string;
+    endDate: string;
+    productIds: string[];
+    isFullPeriod: boolean;
+    status: 'active' | 'scheduled' | 'expired';
+  }[]>(() => {
+    try {
+      const saved = localStorage.getItem('O_FAVORITO_WEEKLY_CAMPAIGNS');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [campaignSearchName, setCampaignSearchName] = useState('');
+  const [campaignSearchCategory, setCampaignSearchCategory] = useState('');
+  const [selectedOfferProductIds, setSelectedOfferProductIds] = useState<string[]>([]);
+  const [newCampaignName, setNewCampaignName] = useState('');
+  const [newCampaignDiscount, setNewCampaignDiscount] = useState<number>(10);
+  const [newCampaignUseFixedPrice, setNewCampaignUseFixedPrice] = useState(false);
+  const [newCampaignFixedPrice, setNewCampaignFixedPrice] = useState<number>(0);
+  const [newCampaignPeriodType, setNewCampaignPeriodType] = useState<'week' | 'days' | 'weekend' | 'custom'>('week');
+  const [newCampaignStartDate, setNewCampaignStartDate] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [newCampaignEndDate, setNewCampaignEndDate] = useState<string>(() => {
+    const end = new Date();
+    end.setDate(end.getDate() + 7);
+    return end.toISOString().split('T')[0];
+  });
+  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
 
   // Geographic coordinates simulation for neighborhoods in Natal/RN region around "O Favorito" (Center)
   const NEIGHBORHOOD_COORDS: Record<string, { x: number; y: number }> = {
@@ -75,6 +113,166 @@ export default function AdminPanel({
     const x = Math.round(50 + Math.cos(angle) * radius);
     const y = Math.round(50 + Math.sin(angle) * radius);
     return { x: Math.max(12, Math.min(88, x)), y: Math.max(12, Math.min(88, y)) };
+  };
+
+  const handleCreateOffersCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCampaignName.trim()) {
+      showToast('Por favor, informe o nome da campanha.', 'error');
+      return;
+    }
+    if (selectedOfferProductIds.length === 0) {
+      showToast('Selecione pelo menos um produto para aplicar as ofertas.', 'error');
+      return;
+    }
+    if (!newCampaignUseFixedPrice && (newCampaignDiscount <= 0 || newCampaignDiscount >= 100)) {
+      showToast('O desconto deve ser entre 1% e 99%.', 'error');
+      return;
+    }
+    if (newCampaignUseFixedPrice && newCampaignFixedPrice <= 0) {
+      showToast('Informe um preço promocional válido.', 'error');
+      return;
+    }
+
+    setIsCreatingCampaign(true);
+    try {
+      // Calculate start and end dates based on option
+      let startStr = newCampaignStartDate;
+      let endStr = newCampaignEndDate;
+      const now = new Date();
+
+      if (newCampaignPeriodType === 'week') {
+        const today = new Date();
+        const nextSunday = new Date();
+        const dayOfWeek = today.getDay(); // 0 is Sunday, 1 is Monday ... etc.
+        const daysToSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
+        nextSunday.setDate(today.getDate() + daysToSunday);
+        startStr = today.toISOString().split('T')[0];
+        endStr = nextSunday.toISOString().split('T')[0];
+      } else if (newCampaignPeriodType === 'weekend') {
+        const today = new Date();
+        const friday = new Date();
+        const sunday = new Date();
+        const currDay = today.getDay();
+        
+        // Friday is 5
+        const diffFriday = currDay <= 5 ? (5 - currDay) : (5 - currDay + 7);
+        friday.setDate(today.getDate() + diffFriday);
+        
+        // Sunday is 0
+        const diffSunday = currDay === 0 ? 0 : (7 - currDay);
+        sunday.setDate(today.getDate() + diffSunday + (currDay > 0 && currDay <= 5 ? 0 : 7));
+        
+        startStr = friday.toISOString().split('T')[0];
+        endStr = sunday.toISOString().split('T')[0];
+      } else if (newCampaignPeriodType === 'days') {
+        const today = new Date();
+        const end = new Date();
+        end.setDate(today.getDate() + 7);
+        startStr = today.toISOString().split('T')[0];
+        endStr = end.toISOString().split('T')[0];
+      }
+
+      // 1. Update each product in DB
+      for (const pid of selectedOfferProductIds) {
+        const prod = products.find(p => p.id === pid);
+        if (prod) {
+          let calculatedPromoPrice: number;
+          if (newCampaignUseFixedPrice) {
+            calculatedPromoPrice = Number(newCampaignFixedPrice);
+          } else {
+            calculatedPromoPrice = Number((prod.price * (1 - newCampaignDiscount / 100)).toFixed(2));
+          }
+
+          const updatedProd: Product = {
+            ...prod,
+            isPromo: true,
+            promoPrice: calculatedPromoPrice,
+          };
+          await db.updateProduct(updatedProd);
+        }
+      }
+
+      // 2. Determine campaign status
+      const startDateObj = new Date(startStr + 'T00:00:00');
+      const endDateObj = new Date(endStr + 'T23:59:59');
+      let campaignStatus: 'active' | 'scheduled' | 'expired' = 'active';
+      if (now < startDateObj) {
+        campaignStatus = 'scheduled';
+      } else if (now > endDateObj) {
+        campaignStatus = 'expired';
+      }
+
+      // 3. Create Campaign Record
+      const newCampaign = {
+        id: 'camp_' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+        name: newCampaignName.toUpperCase().trim(),
+        discountPercent: newCampaignUseFixedPrice ? undefined : newCampaignDiscount,
+        startDate: startStr,
+        endDate: endStr,
+        productIds: [...selectedOfferProductIds],
+        isFullPeriod: newCampaignPeriodType !== 'custom',
+        status: campaignStatus,
+      };
+
+      const updatedCampaigns = [newCampaign, ...weeklyCampaigns];
+      setWeeklyCampaigns(updatedCampaigns);
+      localStorage.setItem('O_FAVORITO_WEEKLY_CAMPAIGNS', JSON.stringify(updatedCampaigns));
+
+      showToast(`Campanha "${newCampaign.name}" com ${newCampaign.productIds.length} produtos ativada com sucesso!`, 'success');
+      
+      // Cleanup inputs
+      setNewCampaignName('');
+      setSelectedOfferProductIds([]);
+      onRefreshProducts();
+      await loadData();
+    } catch (e) {
+      console.error('Erro ao salvar campanha de ofertas semanais:', e);
+      showToast('Erro ao aplicar ofertas no banco de dados.', 'error');
+    } finally {
+      setIsCreatingCampaign(false);
+    }
+  };
+
+  const handleDeactivateCampaign = async (campaignId: string) => {
+    const campaign = weeklyCampaigns.find(c => c.id === campaignId);
+    if (!campaign) return;
+
+    if (!window.confirm(`Deseja realmente encerrar a campanha "${campaign.name}"? Isso removerá a promoção de todos os ${campaign.productIds.length} produtos envolvidos.`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Restore products promo status
+      for (const pid of campaign.productIds) {
+        const prod = products.find(p => p.id === pid);
+        if (prod) {
+          const restoredProd: Product = {
+            ...prod,
+            isPromo: false,
+            promoPrice: undefined,
+          };
+          await db.updateProduct(restoredProd);
+        }
+      }
+
+      // Update campaign status
+      const updated = weeklyCampaigns.map(c => 
+        c.id === campaignId ? { ...c, status: 'expired' as const } : c
+      );
+      setWeeklyCampaigns(updated);
+      localStorage.setItem('O_FAVORITO_WEEKLY_CAMPAIGNS', JSON.stringify(updated));
+
+      showToast(`Campanha de ofertas "${campaign.name}" encerrada com sucesso!`, 'success');
+      onRefreshProducts();
+      await loadData();
+    } catch (e) {
+      console.error('Erro ao desativar campanha:', e);
+      showToast('Erro ao encerrar campanha de ofertas.', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOptimizeRoute = (customSelectedIds?: string[]) => {
@@ -1315,6 +1513,14 @@ export default function AdminPanel({
             }`}
           >
             📍 Roteirização Inteligente
+          </button>
+          <button
+            onClick={() => setActiveTab('offers')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'offers' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            🏷️ Ofertas Semanais ({weeklyCampaigns.filter(c => c.status === 'active').length})
           </button>
 
         </div>
@@ -4419,6 +4625,462 @@ export default function AdminPanel({
                   )}
                 </div>
 
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'offers' && (
+            <div className="space-y-6 animate-fadeIn" id="weekly-offers-panel">
+              {/* Header */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-2xl border border-gray-150 shadow-3xs">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2 font-display uppercase tracking-wider">
+                    🏷️ Gestão de Ofertas Semanais e Periódicas
+                  </h3>
+                  <p className="text-xs text-gray-400 font-medium max-w-2xl">
+                    Crie campanhas de ofertas rápidas limitadas por tempo. Selecione os produtos por categoria ou nome, defina a regra de preço (desconto percentual ou valor promocional fixo) e o período de vigência.
+                  </p>
+                </div>
+                <div className="bg-emerald-50 text-emerald-800 border border-emerald-150 px-4 py-2 rounded-xl text-center">
+                  <span className="text-[10px] block font-black uppercase tracking-wider text-emerald-600 font-sans">Ofertas Ativas</span>
+                  <span className="text-xl font-black">{weeklyCampaigns.filter(c => c.status === 'active').length}</span>
+                </div>
+              </div>
+
+              {/* Stats & Overview Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white border border-gray-150 p-4 rounded-2xl flex items-center gap-3 shadow-3xs">
+                  <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600 shrink-0">
+                    <Tag size={18} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider font-sans">Campanhas Criadas</span>
+                    <p className="text-lg font-black text-slate-950 font-sans">{weeklyCampaigns.length}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-150 p-4 rounded-2xl flex items-center gap-3 shadow-3xs">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+                    <CheckCircle size={18} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider font-sans">Descontos Médios</span>
+                    <p className="text-lg font-black text-slate-950 font-sans">
+                      {weeklyCampaigns.some(c => c.discountPercent)
+                        ? `${Math.round(weeklyCampaigns.reduce((sum, c) => sum + (c.discountPercent || 0), 0) / Math.max(1, weeklyCampaigns.filter(c => c.discountPercent).length))}% OFF`
+                        : '10% OFF'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-150 p-4 rounded-2xl flex items-center gap-3 shadow-3xs">
+                  <div className="w-10 h-10 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center text-violet-600 shrink-0">
+                    <Database size={18} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider font-sans">Total de Itens Ofertados</span>
+                    <p className="text-lg font-black text-slate-950 font-sans">
+                      {products.filter(p => p.isPromo).length} produtos
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Campaign Wizard Layout */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Form column (1/2 width / 5 cols) */}
+                <div className="lg:col-span-5 bg-white border border-gray-150 rounded-2xl shadow-3xs p-5 space-y-4">
+                  <span className="text-xs font-black uppercase text-indigo-800 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-md tracking-wider inline-block font-sans">
+                    ⚡ Passo 1: Regras da Oferta
+                  </span>
+
+                  <form onSubmit={handleCreateOffersCampaign} className="space-y-4">
+                    {/* Campaign Name */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-700 block uppercase font-sans">
+                        Nome da Campanha *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newCampaignName}
+                        onChange={(e) => setNewCampaignName(e.target.value)}
+                        placeholder="EX: FEIRÃO DA QUARTA, SUPER SALDÃO"
+                        className="w-full text-xs font-semibold p-2.5 bg-slate-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-1 focus:ring-emerald-700 transition-all uppercase"
+                      />
+                    </div>
+
+                    {/* Choose Pricing Type */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-700 block uppercase font-sans">
+                        Modo de Precificação
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1">
+                        <button
+                          type="button"
+                          onClick={() => setNewCampaignUseFixedPrice(false)}
+                          className={`py-1.5 px-3 text-xs font-extrabold rounded-lg transition-all ${
+                            !newCampaignUseFixedPrice
+                              ? 'bg-white text-emerald-800 shadow-3xs border border-slate-200'
+                              : 'text-gray-500 hover:text-gray-800'
+                          }`}
+                        >
+                          % Porcentagem Desconto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewCampaignUseFixedPrice(true)}
+                          className={`py-1.5 px-3 text-xs font-extrabold rounded-lg transition-all ${
+                            newCampaignUseFixedPrice
+                              ? 'bg-white text-emerald-800 shadow-3xs border border-slate-200'
+                              : 'text-gray-500 hover:text-gray-800'
+                          }`}
+                        >
+                          R$ Preço Único Fixo
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Price Value Input */}
+                    {!newCampaignUseFixedPrice ? (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-700 block uppercase font-sans">
+                          Porcentagem de Desconto (%) *
+                        </label>
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            value={newCampaignDiscount}
+                            onChange={(e) => setNewCampaignDiscount(Math.max(1, Math.min(99, Number(e.target.value))))}
+                            className="w-24 text-xs font-black p-2.5 bg-slate-50 border border-gray-250 rounded-xl text-center font-mono"
+                          />
+                          <div className="flex-1 flex gap-1 flex-wrap">
+                            {[10, 15, 20, 25, 30].map(val => (
+                              <button
+                                key={val}
+                                type="button"
+                                onClick={() => setNewCampaignDiscount(val)}
+                                className={`px-2 py-1 bg-slate-100 hover:bg-slate-200 text-[10px] font-black rounded border border-slate-250 transition-colors ${
+                                  newCampaignDiscount === val ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700 animate-pulse' : 'text-slate-700'
+                                }`}
+                              >
+                                {val}%
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-gray-700 block uppercase font-sans">
+                          Valor Promocional Fixo (R$) *
+                        </label>
+                        <div className="relative">
+                          <DollarSign className="absolute left-3 top-2.5 text-gray-400" size={14} />
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={newCampaignFixedPrice || ''}
+                            onChange={(e) => setNewCampaignFixedPrice(Number(e.target.value))}
+                            placeholder="0,00"
+                            className="w-full text-xs font-black pl-8 p-2.5 bg-slate-50 border border-gray-250 rounded-xl font-mono"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Period Setting */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-700 block uppercase font-sans">
+                        Vigência / Período
+                      </label>
+                      <select
+                        value={newCampaignPeriodType}
+                        onChange={(e) => setNewCampaignPeriodType(e.target.value as any)}
+                        className="w-full text-xs font-bold p-2.5 bg-slate-50 border border-gray-250 rounded-xl"
+                      >
+                        <option value="week">Esta Semana (Até Domingo)</option>
+                        <option value="weekend">Fim de Semana (Sexta a Domingo)</option>
+                        <option value="days">Próximos 7 Dias corridos</option>
+                        <option value="custom">Período Personalizado</option>
+                      </select>
+                    </div>
+
+                    {/* Custom dates only visible if Custom selected */}
+                    {newCampaignPeriodType === 'custom' && (
+                      <div className="grid grid-cols-2 gap-3 p-3 bg-slate-55 border border-gray-200 rounded-2xl animate-fadeIn">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-gray-500 uppercase block font-sans">Data Inicial</label>
+                          <input
+                            type="date"
+                            value={newCampaignStartDate}
+                            onChange={(e) => setNewCampaignStartDate(e.target.value)}
+                            className="w-full text-[10.5px] font-bold p-2 bg-white border border-gray-250 rounded-lg text-center font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-gray-500 uppercase block font-sans">Data Final</label>
+                          <input
+                            type="date"
+                            value={newCampaignEndDate}
+                            onChange={(e) => setNewCampaignEndDate(e.target.value)}
+                            className="w-full text-[10.5px] font-bold p-2 bg-white border border-gray-250 rounded-lg text-center font-mono"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Selection Summary Block */}
+                    <div className="bg-emerald-50/60 border border-emerald-150 p-3 rounded-xl flex items-center justify-between text-xs font-bold text-emerald-900 font-sans">
+                      <span>Produtos Selecionados:</span>
+                      <span className="bg-emerald-600 text-white rounded-full px-3 py-0.5 text-[11px] font-black font-mono animate-scaleUp">
+                        {selectedOfferProductIds.length}
+                      </span>
+                    </div>
+
+                    {/* Create Campaign Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={isCreatingCampaign || selectedOfferProductIds.length === 0}
+                      className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 disabled:bg-gray-255 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-sm shadow-emerald-700/10 active:scale-[0.99] transition-all flex items-center justify-center gap-1.5 font-sans"
+                    >
+                      {isCreatingCampaign ? (
+                        <>
+                          <RefreshCw className="animate-spin" size={13} />
+                          Salvando Ofertas...
+                        </>
+                      ) : (
+                        <>
+                          Aplicar Ofertas Semanais 🚀
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Selection column (7 cols) */}
+                <div className="lg:col-span-7 bg-white border border-gray-150 rounded-2xl shadow-3xs p-5 space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center flex-wrap gap-2">
+                      <span className="text-xs font-black uppercase text-indigo-800 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-md tracking-wider font-sans">
+                        📦 Passo 2: Selecionar os Produtos
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const filtered = products.filter(p => {
+                            const matchesCategory = !campaignSearchCategory || p.category === campaignSearchCategory;
+                            const matchesQuery = !campaignSearchName || p.name.toLowerCase().includes(campaignSearchName.toLowerCase().trim());
+                            return matchesCategory && matchesQuery;
+                          });
+                          const filteredIds = filtered.map(p => p.id);
+                          const allSelected = filteredIds.every(id => selectedOfferProductIds.includes(id));
+                          
+                          if (allSelected) {
+                            setSelectedOfferProductIds(prev => prev.filter(id => !filteredIds.includes(id)));
+                          } else {
+                            setSelectedOfferProductIds(prev => Array.from(new Set([...prev, ...filteredIds])));
+                          }
+                        }}
+                        className="text-[10px] uppercase font-black text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded cursor-pointer font-sans"
+                      >
+                        Selecionar/Desmarcar Filtrados
+                      </button>
+                    </div>
+
+                    {/* Double Filters Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pb-1 text-xs">
+                      {/* Search category */}
+                      <select
+                        value={campaignSearchCategory}
+                        onChange={(e) => setCampaignSearchCategory(e.target.value)}
+                        className="w-full font-bold p-2 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer"
+                      >
+                        <option value="">Todas as Categorias</option>
+                        {CATEGORIES.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+
+                      {/* Search query string */}
+                      <input
+                        type="text"
+                        value={campaignSearchName}
+                        onChange={(e) => setCampaignSearchName(e.target.value)}
+                        placeholder="Filtrar por nome do produto..."
+                        className="w-full font-bold p-2 bg-slate-50 border border-slate-200 rounded-lg placeholder-gray-400 font-sans"
+                      />
+                    </div>
+
+                    {/* Micro Products Checklist Scroll Area */}
+                    <div className="border border-slate-150 rounded-xl divide-y divide-slate-100 overflow-y-auto max-h-[360px] bg-slate-50/30">
+                      {(() => {
+                        const filtered = products.filter(p => {
+                          const matchesCategory = !campaignSearchCategory || p.category === campaignSearchCategory;
+                          const matchesQuery = !campaignSearchName || p.name.toLowerCase().includes(campaignSearchName.toLowerCase().trim());
+                          return matchesCategory && matchesQuery;
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="p-8 text-center text-xs text-gray-400 font-bold font-sans">
+                              Nenhum produto correspondente aos filtros.
+                            </div>
+                          );
+                        }
+
+                        return filtered.map(p => {
+                          const isSelected = selectedOfferProductIds.includes(p.id);
+                          
+                          // Project estimated promo price
+                          let projectedPrice: number;
+                          if (newCampaignUseFixedPrice) {
+                            projectedPrice = Number(newCampaignFixedPrice);
+                          } else {
+                            projectedPrice = Number((p.price * (1 - newCampaignDiscount / 100)).toFixed(2));
+                          }
+
+                          return (
+                            <label
+                              key={p.id}
+                              style={{ contentVisibility: 'auto' }}
+                              className={`flex items-center gap-3 p-3.5 hover:bg-slate-50 select-none cursor-pointer transition-colors ${
+                                isSelected ? 'bg-emerald-50/40 border-l-4 border-emerald-600' : ''
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  if (isSelected) {
+                                    setSelectedOfferProductIds(prev => prev.filter(id => id !== p.id));
+                                  } else {
+                                    setSelectedOfferProductIds(prev => [...prev, p.id]);
+                                  }
+                                }}
+                                className="rounded text-emerald-700 focus:ring-emerald-600 h-4.5 w-4.5 cursor-pointer shrink-0"
+                              />
+                              <img
+                                src={p.image}
+                                alt={p.name}
+                                className="w-8 h-8 rounded-md bg-white border border-slate-200 shrink-0 object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <span className="text-[11.5px] font-bold text-slate-800 truncate block leading-snug">{p.name}</span>
+                                <span className="text-[9.5px] font-semibold text-gray-400 block">{p.category} ({p.unit})</span>
+                              </div>
+                              <div className="text-right shrink-0 font-mono">
+                                <span className="text-xs font-semibold text-gray-405 line-through block">
+                                  R$ {p.price.toFixed(2)}
+                                </span>
+                                <span className="text-xs font-black text-emerald-700 block">
+                                  → R$ {projectedPrice > 0 ? projectedPrice.toFixed(2) : '0.00'}
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400 font-medium text-center pt-2 italic leading-tight font-sans">
+                    * Ao salvar, a promoção calcula o preço reduzido e atualiza o banco de dados. Os clientes verão as mudanças na hora.
+                  </p>
+                </div>
+              </div>
+
+              {/* Weekly Campaigns Historic Listing */}
+              <div className="bg-white border border-gray-150 rounded-2xl shadow-3xs p-5 space-y-4">
+                <div className="flex justify-between items-center flex-wrap gap-2">
+                  <h4 className="text-sm font-black text-slate-900 font-display uppercase tracking-wider flex items-center gap-1.5">
+                    🗂️ Campanhas Semanais Ativas e Recurrentes
+                  </h4>
+                  <span className="text-[10.5px] text-gray-400 font-bold font-mono">
+                    Total de Campanhas: {weeklyCampaigns.length}
+                  </span>
+                </div>
+
+                {weeklyCampaigns.length === 0 ? (
+                  <div className="p-10 border border-dashed border-gray-200 rounded-xl text-center text-xs text-gray-450 font-bold font-sans">
+                    Nenhuma campanha de ofertas cadastrada no momento. Crie sua primeira campanha acima!
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-gray-150 rounded-xl">
+                    <table className="w-full table-auto text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-gray-200 text-gray-500 font-black uppercase text-[9px] tracking-wider font-sans">
+                          <th className="p-3">Campanha</th>
+                          <th className="p-3">Período de Vigência</th>
+                          <th className="p-3 text-center">Regra Preço</th>
+                          <th className="p-3 text-center">Quantidade Itens</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3 text-right">Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-150 font-sans font-medium">
+                        {weeklyCampaigns.map((camp) => {
+                          const startArr = camp.startDate.split('-');
+                          const endArr = camp.endDate.split('-');
+                          const formattedPeriod = `${startArr[2]}/${startArr[1]} até ${endArr[2]}/${endArr[1]}`;
+
+                          return (
+                            <tr key={camp.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="p-3 font-black text-slate-850">
+                                📣 {camp.name}
+                              </td>
+                              <td className="p-3 font-semibold text-slate-500 font-mono">
+                                📅 {formattedPeriod}
+                              </td>
+                              <td className="p-3 text-center font-bold text-indigo-700">
+                                {camp.discountPercent ? `${camp.discountPercent}% OFF` : 'Preço Fixo'}
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className="bg-slate-100 border border-slate-3 bg-white font-bold px-2.5 py-0.5 rounded text-gray-600 font-mono text-[10px]">
+                                  {camp.productIds.length} produtos
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                {camp.status === 'active' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-250 text-emerald-800 text-[9.5px] font-black rounded-full uppercase tracking-wider animate-pulse">
+                                    <span className="w-1 bg-emerald-600 h-1 rounded-full shrink-0"></span>
+                                    Em vigor
+                                  </span>
+                                )}
+                                {camp.status === 'scheduled' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-50 border border-sky-200 text-sky-850 text-[9.5px] font-black rounded-full uppercase tracking-wider">
+                                    Agendada
+                                  </span>
+                                )}
+                                {camp.status === 'expired' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 border border-slate-350 text-slate-600 text-[9.5px] font-bold rounded-full uppercase tracking-wider">
+                                    Finalizada
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 text-right">
+                                {camp.status !== 'expired' ? (
+                                  <button
+                                    onClick={() => handleDeactivateCampaign(camp.id)}
+                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-250 text-rose-800 text-[9.5px] font-black rounded-lg cursor-pointer transition-all uppercase tracking-wider active:scale-95"
+                                  >
+                                    Encerrar 🛑
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-gray-400 font-bold uppercase">Concluído</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
